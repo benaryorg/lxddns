@@ -246,7 +246,8 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	let instant = Instant::now();
 
 	// maybe switch to reqwest some day?
-	let output = Command::new("lxc")
+	let output = Command::new("sudo")
+		.arg("lxc")
 		.arg("query")
 		.arg("--")
 		.arg(format!("/1.0/instances/{}/state", name.as_ref()))
@@ -380,7 +381,7 @@ struct QueryParameters
 {
 	qtype: String,
 	qname: String,
-	zone_id: isize,
+	// *not* optional -.- // zone_id: isize,
 	// unused: remote, local, real-remote
 }
 
@@ -452,6 +453,36 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 									{
 										match serde_json::from_slice::<Query>(&input)
 										{
+											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if qtype == "SOA" =>
+											{
+												let response = Response
+												{
+													result: vec![ResponseEntry
+													{
+														content: "example.com. example.example.com. 1 86400 7200 3600000 3600".to_string(),
+														qtype: "SOA".to_string(),
+														qname: qname.to_string(),
+														ttl: 300,
+													}],
+												};
+												match serde_json::to_value(response)
+												{
+													Ok(response) =>
+													{
+														if let Err(err) = writeln!(writer, "{}", response.to_string()).await
+														{
+															info!("closing unix connection due to error: {}", err);
+															break;
+														}
+														else
+														{
+															debug!("sent the fucking SOA record");
+															continue;
+														}
+													}
+													Err(err) => info!("cannot create JSON value: {}", err),
+												}
+											},
 											Ok(Query { parameters: QueryParameters { qtype, .. }, .. }) if qtype != "AAAA" && qtype != "ANY" => info!("not asking for AAAA record: {}", qtype),
 											Ok(Query { parameters: QueryParameters { qname, .. }, .. }) if !qname.ends_with(".lxd.bsocat.net.") => info!("not the right domain: {}", qname),
 											Ok(Query { parameters: QueryParameters { qname, .. }, .. }) if qname.split('.').count() > 5 => info!("too many dots: {}", qname),
