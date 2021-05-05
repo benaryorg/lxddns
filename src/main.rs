@@ -3,6 +3,15 @@ use error::*;
 
 use ::
 {
+	clap::
+	{
+		app_from_crate,
+		crate_description,
+		crate_authors,
+		crate_version,
+		crate_name,
+		Arg,
+	},
 	lapin::
 	{
 		Connection,
@@ -22,6 +31,7 @@ use ::
 		debug,
 		trace,
 	},
+	futures::stream::StreamExt,
 	regex_static::static_regex,
 	error_chain::*,
 	serde::
@@ -44,6 +54,11 @@ use ::
 		{
 			BufReader,
 		},
+		process::
+		{
+			Command,
+			Stdio,
+		},
 	},
 	std::
 	{
@@ -59,11 +74,6 @@ use ::
 			HashMap,
 		},
 		net::Ipv6Addr,
-		process::
-		{
-			Command,
-			Stdio,
-		},
 	},
 };
 
@@ -178,7 +188,7 @@ impl FromStr for ContainerName
 async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
 	debug!("starting remote query for {}", name.as_ref());
-	let exchange = channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
+	channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
 	let queue = channel.queue_declare(
 		"",
 		QueueDeclareOptions
@@ -229,7 +239,7 @@ async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<
 	Ok(None)
 }
 
-fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
+async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
 	trace!("starting local query for {}", name.as_ref());
 
@@ -238,11 +248,13 @@ fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	// maybe switch to reqwest some day?
 	let output = Command::new("lxc")
 		.arg("query")
+		.arg("--")
 		.arg(format!("/1.0/instances/{}/state", name.as_ref()))
 		.stdin(Stdio::null())
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped())
 		.output()
+		.await
 		.chain_err(|| ErrorKind::LocalExecution(None))?;
 
 	debug!("local query ran for {:.3}s", instant.elapsed().as_secs_f64());
@@ -328,19 +340,17 @@ async fn responder(channel: Channel) -> Result<()>
 			},
 		};
 
-		let (reply_to, corr_id) = match (
-			delivery.properties.reply_to(),
-			delivery.properties.correlation_id(),
-		)
+		let (reply_to, corr_id) = match (delivery.properties.reply_to(),delivery.properties.correlation_id())
 		{
-			(Some(r), Some(c)) => (r.clone(), c.clone()),
-			_ => {
-				warn!("received message without reply_to or correlation_id; acking and ignoring");
+			(Some(reply_to),Some(corr_id)) => (reply_to,corr_id),
+			_ =>
+			{
+				info!("received message without reply_to or correlation_id; acking and ignoring");
 				continue;
 			}
 		};
 
-		let addresses = match local_query(&name)
+		let addresses = match local_query(&name).await
 		{
 			Ok(Some(addresses)) => addresses,
 			Ok(_) =>
@@ -358,7 +368,7 @@ async fn responder(channel: Channel) -> Result<()>
 
 		channel.basic_publish("",reply_to.as_str(),Default::default(),response,
 			AMQPProperties::default()
-				.with_correlation_id(corr_id)
+				.with_correlation_id(corr_id.clone())
 		).await?;
 	}
 
@@ -399,20 +409,18 @@ struct Response
 
 async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()>
 {
-	let mut connections = listener.incoming();
-
-	while let Some(stream) = connections.next().await
+	listener.incoming().for_each_concurrent(10, |stream|
 	{
+		// so this entire thing has graceful handling and no questionmarks which is why this works *shrug*
 		debug!("connection on unix socket");
-		let mut writer = stream?;
-
-		let mut channel = connection.create_channel().await?;
+		let mut writer = stream.unwrap();
+		let channel = connection.create_channel();
 		let reader = BufReader::new(writer.clone());
 
 		trace!("starting async task");
-
-		let handler = task::spawn_local(async move
+		async move
 		{
+			let mut channel = channel.await.unwrap();
 			trace!("async task running");
 			let mut lines = reader.split(b'\n');
 			while let Some(input) = lines.next().await
@@ -529,19 +537,55 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 					break;
 				}
 			}
-		});
-	}
+		}
+	}).await;
 	Ok(())
 }
 
 #[async_std::main]
 async fn main() -> Result<()>
 {
-	env_logger::init();
+	let matches = app_from_crate!()
+		.arg(Arg::with_name("url")
+			.short("u")
+			.long("url")
+			.help("connection string for the message queue")
+			.takes_value(true)
+			.value_name("AMQP_URL")
+			.default_value("amqp://guest:guest@[::1]:5672")
+			.multiple(false)
+			.global(true)
+		)
+		.arg(Arg::with_name("loglevel")
+			.short("v")
+			.long("loglevel")
+			.help("loglevel to be used, if not specified uses env_logger's auto-detection")
+			.takes_value(true)
+			.value_name("LOGLEVEL")
+			.multiple(false)
+			.global(true)
+		)
+		.arg(Arg::with_name("socket")
+			.short("s")
+			.long("socket")
+			.help("location of the unix domain socket to be created")
+			.takes_value(true)
+			.value_name("SOCKET_PATH")
+			.default_value("/var/run/lxddns/lxddns.sock")
+			.multiple(false)
+			.global(true)
+		)
+		.get_matches();
 
+	if let Some(loglevel) = matches.value_of("loglevel")
+	{
+		std::env::set_var("RUST_LOG", loglevel);
+	}
+
+	env_logger::init();
 	info!("logging initialised");
 
-	let connection = Connection::connect("amqp://guest:guest@[::1]:5672",Default::default()).await?;
+	let connection = Connection::connect(matches.value_of("url").unwrap(),Default::default()).await?;
 	info!("connection to message queue established");
 
 	let channel = connection.create_channel().await?;
@@ -549,7 +593,7 @@ async fn main() -> Result<()>
 	let responder = task::spawn_local(async move { responder(channel).await });
 	info!("responder spawned");
 
-	let listener = UnixListener::bind("/tmp/lxddns.sock").await?;
+	let listener = UnixListener::bind(matches.value_of("socket").unwrap()).await?;
 	info!("unix socket opened");
 
 	let unixserver = task::spawn_local(async move { unixserver(connection,listener).await });
