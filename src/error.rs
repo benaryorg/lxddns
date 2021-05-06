@@ -16,6 +16,26 @@ error_chain!
 
 	errors
 	{
+		ResponderError(error: Box<Error>)
+		{
+			description("rpc responder failed")
+			display("the rpc responder failed with an error: {}", error)
+		}
+		ResponderClosed
+		{
+			description("rpc responder closed")
+			display("the unix domain server closed gracefully")
+		}
+		UnixServerError(error: Box<Error>)
+		{
+			description("unix server failed")
+			display("the unix domain server failed with an error: {}", error)
+		}
+		UnixServerClosed
+		{
+			description("unix server closed")
+			display("the unix domain server closed gracefully")
+		}
 		LocalOutput
 		{
 			description("local command output unparsable")

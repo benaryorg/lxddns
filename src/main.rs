@@ -26,12 +26,17 @@ use ::
 	},
 	log::
 	{
+		error,
 		warn,
 		info,
 		debug,
 		trace,
 	},
-	futures::stream::StreamExt,
+	futures::
+	{
+		stream::StreamExt,
+		future,
+	},
 	regex_static::static_regex,
 	error_chain::*,
 	serde::
@@ -59,6 +64,7 @@ use ::
 			Command,
 			Stdio,
 		},
+		path::Path,
 	},
 	std::
 	{
@@ -574,7 +580,7 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 }
 
 #[async_std::main]
-async fn main() -> Result<()>
+async fn main() -> !
 {
 	let matches = app_from_crate!()
 		.arg(Arg::with_name("url")
@@ -616,7 +622,30 @@ async fn main() -> Result<()>
 	env_logger::init();
 	info!("logging initialised");
 
-	let connection = Connection::connect(matches.value_of("url").unwrap(),Default::default()).await?;
+	let url = matches.value_of("url").unwrap();
+	let unixpath = Path::new(matches.value_of("socket").unwrap());
+
+	loop
+	{
+		match run(&unixpath, &url).await
+		{
+			Ok(_) => unreachable!(),
+			Err(err) =>
+			{
+				error!("fatal error occured: {}",err);
+				for err in err.iter()
+				{
+					error!("caused by: {}",err);
+				}
+				error!("restarting all services");
+			},
+		}
+	}
+}
+
+async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S) -> Result<()> // use never when available
+{
+	let connection = Connection::connect(url.as_ref(),Default::default()).await?;
 	info!("connection to message queue established");
 
 	let channel = connection.create_channel().await?;
@@ -624,13 +653,19 @@ async fn main() -> Result<()>
 	let responder = task::spawn_local(async move { responder(channel).await });
 	info!("responder spawned");
 
-	let listener = UnixListener::bind(matches.value_of("socket").unwrap()).await?;
+	let listener = UnixListener::bind(unixpath.as_ref()).await?;
 	info!("unix socket opened");
 
 	let unixserver = task::spawn_local(async move { unixserver(connection,listener).await });
 	info!("unixserver started");
 
 	info!("running");
-	unixserver.race(responder).await
+	match future::select(unixserver,responder).await
+	{
+		future::Either::Left((Ok(()), _)) => Err(ErrorKind::UnixServerClosed.into()),
+		future::Either::Left((Err(err), _)) => Err(ErrorKind::UnixServerError(Box::new(err)).into()),
+		future::Either::Right((Ok(()), _)) => Err(ErrorKind::ResponderClosed.into()),
+		future::Either::Right((Err(err), _)) => Err(ErrorKind::ResponderError(Box::new(err)).into()),
+	}
 }
 
