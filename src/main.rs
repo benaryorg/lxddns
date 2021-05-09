@@ -227,7 +227,7 @@ async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<
 	).await?;
 	trace!("query for {} published the message", name.as_ref());
 
-	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(Duration::from_millis(1500)).await
+	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(Duration::from_millis(5000)).await
 	{
 		if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
 		{
