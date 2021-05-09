@@ -54,6 +54,7 @@ use ::
 	{
 		prelude::*,
 		task,
+		fs::remove_file,
 		os::unix::net::UnixListener,
 		io::
 		{
@@ -627,6 +628,7 @@ async fn main() -> !
 
 	loop
 	{
+		info!("running all services");
 		match run(&unixpath, &url).await
 		{
 			Ok(_) => unreachable!(),
@@ -640,6 +642,8 @@ async fn main() -> !
 				error!("restarting all services");
 			},
 		}
+		let _ = remove_file(&unixpath).await;
+		task::sleep(Duration::from_secs(1)).await;
 	}
 }
 
