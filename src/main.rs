@@ -460,16 +460,16 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 									{
 										match serde_json::from_slice::<Query>(&input)
 										{
-											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if qtype == "SOA" =>
+											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if qtype == "SOA" && qname == "lxd.bsocat.net." =>
 											{
 												let response = Response
 												{
 													result: vec![ResponseEntry
 													{
-														content: "example.com. example.example.com. 1 86400 7200 3600000 3600".to_string(),
+														content: "lxd.bsocat.net. hostmaster.benary.org. 1 86400 7200 3600000 3600".to_string(),
 														qtype: "SOA".to_string(),
 														qname: qname.to_string(),
-														ttl: 300,
+														ttl: 16,
 													}],
 												};
 												match serde_json::to_value(response)
@@ -514,7 +514,7 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 																			content: format!("{}",address),
 																			qtype: "AAAA".to_string(),
 																			qname: parameters.qname.to_string(),
-																			ttl: 64,
+																			ttl: 32,
 																		})
 																		.collect::<Vec<_>>()
 																};
