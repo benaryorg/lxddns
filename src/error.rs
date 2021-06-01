@@ -53,6 +53,11 @@ error_chain!
 			description("unsafe domain name used")
 			display("domain name is not safe for resolution: '{}'", name)
 		}
+		MessageQueueChannelTaint
+		{
+			description("error due to channel taint")
+			display("message queue channel was considered tainted after an error")
+		}
 	}
 }
 

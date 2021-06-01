@@ -34,7 +34,11 @@ use ::
 	},
 	futures::
 	{
-		stream::StreamExt,
+		stream::
+		{
+			StreamExt,
+			TryStreamExt,
+		},
 		future,
 	},
 	regex_static::static_regex,
@@ -417,18 +421,17 @@ struct Response
 
 async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()>
 {
-	listener.incoming().for_each_concurrent(10, |stream|
+	listener.incoming().map(|res| res.chain_err(|| ErrorKind::MessageQueueChannelTaint)).try_for_each_concurrent(10, |stream|
 	{
-		// so this entire thing has graceful handling and no questionmarks which is why this works *shrug*
 		debug!("connection on unix socket");
-		let mut writer = stream.unwrap();
+		let mut writer = stream;
 		let channel = connection.create_channel();
 		let reader = BufReader::new(writer.clone());
 
 		trace!("starting async task");
 		async move
 		{
-			let mut channel = channel.await.unwrap();
+			let mut channel = channel.await.chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
 			trace!("async task running");
 			let mut lines = reader.split(b'\n');
 			while let Some(input) = lines.next().await
@@ -536,8 +539,12 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 																	Err(err) => info!("cannot create JSON value: {}", err),
 																}
 															},
+															Err(err) =>
+															{
+																error!("channel yielded error resolving {}, assuming taint: {}", name.as_ref(), err);
+																Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
+															},
 															Ok(None) => debug!("remote resolve for {} did not get an answer", name.as_ref()),
-															Err(err) => debug!("could not resolve {} remote: {}", name.as_ref(), err),
 														}
 													},
 													Err(err) => info!("not a containername: {}",err),
@@ -575,8 +582,9 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 					break;
 				}
 			}
+			Ok(())
 		}
-	}).await;
+	}).await?;
 	Ok(())
 }
 
