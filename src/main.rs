@@ -421,6 +421,14 @@ struct Response
 
 async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()>
 {
+	let ref soa = ResponseEntry
+	{
+		content: "lxd.bsocat.net. hostmaster.benary.org. 1 86400 7200 3600000 3600".to_string(),
+		qtype: "SOA".to_string(),
+		qname: "lxd.bsocat.net.".to_string(),
+		ttl: 512,
+	};
+
 	listener.incoming().map(|res| res.chain_err(|| ErrorKind::MessageQueueChannelTaint)).try_for_each_concurrent(10, |stream|
 	{
 		debug!("connection on unix socket");
@@ -463,19 +471,123 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 									{
 										match serde_json::from_slice::<Query>(&input)
 										{
-											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if qtype == "SOA" && qname == "lxd.bsocat.net." =>
+											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if qname.split('.').count() == 6 && qname.starts_with("_acme-challenge.") && qname.ends_with(".lxd.bsocat.net.") =>
 											{
-												let response = Response
+												debug!("acme-challenge request for {} ({})", qname, qtype);
+												let parts = qname.split('.').collect::<Vec<_>>();
+												let iscontainer = parts.get(1).unwrap().parse::<ContainerName>().is_ok();
+												let containerdomain = parts.into_iter().skip(1).collect::<Vec<_>>().join(".");
+												debug!("responding to acme-challenge query for {} with NS {}", qname, containerdomain);
+
+												let mut vec = Vec::new();
+
+												if iscontainer && qtype != "SOA"
 												{
-													result: vec![ResponseEntry
+													vec.push(ResponseEntry
 													{
-														content: "lxd.bsocat.net. hostmaster.benary.org. 1 86400 7200 3600000 3600".to_string(),
-														qtype: "SOA".to_string(),
+														content: containerdomain.clone(),
+														qtype: "NS".to_string(),
 														qname: qname.to_string(),
-														ttl: 16,
-													}],
-												};
-												match serde_json::to_value(response)
+														ttl: 7200,
+													});
+													debug!("acme-challenge ({}) for container name {}", qtype, qname);
+												}
+
+												if !vec.is_empty()
+												{
+													match serde_json::to_value(Response { result: vec, })
+													{
+														Ok(response) =>
+														{
+															if let Err(err) = writeln!(writer, "{}", response.to_string()).await
+															{
+																info!("closing unix connection due to error: {}", err);
+																break;
+															}
+															else
+															{
+																debug!("sent reply");
+																continue;
+															}
+														}
+														Err(err) => info!("cannot create JSON value: {}", err),
+													}
+												}
+												else
+												{
+													debug!("no results for {} ({}), not sending response", qname, qtype)
+												}
+											},
+											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if (qtype == "AAAA" || qtype == "ANY") && qname.ends_with(".lxd.bsocat.net.") && qname.split('.').count() == 5 =>
+											{
+												trace!("request for {}", qname);
+												match qname.split('.').next().unwrap().parse::<ContainerName>()
+												{
+													Ok(name) =>
+													{
+														debug!("querying for {}", name.as_ref());
+														match remote_query(&mut channel,&name).await
+														{
+															Ok(result) =>
+															{
+																debug!("query for {} yielded: {:?}", name.as_ref(), result);
+																let mut vec = Vec::new();
+																if qtype == "ANY"
+																{
+																	vec.push(soa.clone());
+																}
+
+																if let Some(addresses) = result
+																{
+																	vec.extend(addresses.into_iter()
+																		.map(|address| ResponseEntry
+																		{
+																			content: format!("{}", address),
+																			qtype: "AAAA".to_string(),
+																			qname: qname.to_string(),
+																			ttl: 32,
+																		})
+																	);
+																}
+
+																if !vec.is_empty()
+																{
+																	match serde_json::to_value(Response { result: vec, })
+																	{
+																		Ok(response) =>
+																		{
+																			if let Err(err) = writeln!(writer, "{}", response.to_string()).await
+																			{
+																				info!("closing unix connection due to error: {}", err);
+																				break;
+																			}
+																			else
+																			{
+																				debug!("sent reply");
+																				continue;
+																			}
+																		}
+																		Err(err) => info!("cannot create JSON value: {}", err),
+																	}
+																}
+																else
+																{
+																	debug!("no results for {} ({}), not sending response", qname, qtype)
+																}
+															},
+															Err(err) =>
+															{
+																error!("channel yielded error resolving {}, assuming taint: {}", name.as_ref(), err);
+																Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
+															},
+														}
+													},
+													Err(err) => info!("not a containername: {}",err),
+												}
+											},
+											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if (qtype == "SOA" || qtype == "ANY") && (qname.ends_with(".lxd.bsocat.net.") || qname == "lxd.bsocat.net.") =>
+											{
+												match serde_json::to_value(Response { result: vec![soa.clone()], })
 												{
 													Ok(response) =>
 													{
@@ -486,70 +598,14 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 														}
 														else
 														{
-															debug!("sent the fucking SOA record");
+															debug!("sent the SOA record for {}", qname);
 															continue;
 														}
 													}
 													Err(err) => info!("cannot create JSON value: {}", err),
 												}
 											},
-											Ok(Query { parameters: QueryParameters { qtype, .. }, .. }) if qtype != "AAAA" && qtype != "ANY" => info!("not asking for AAAA record: {}", qtype),
-											Ok(Query { parameters: QueryParameters { qname, .. }, .. }) if !qname.ends_with(".lxd.bsocat.net.") => info!("not the right domain: {}", qname),
-											Ok(Query { parameters: QueryParameters { qname, .. }, .. }) if qname.split('.').count() > 5 => info!("too many dots: {}", qname),
-											Ok(Query { parameters, .. }) =>
-											{
-												trace!("request for {}", parameters.qname);
-												match parameters.qname.split('.').next().unwrap().parse::<ContainerName>()
-												{
-													Ok(name) =>
-													{
-														debug!("querying for {}", name.as_ref());
-														match remote_query(&mut channel,&name).await
-														{
-															Ok(Some(addresses)) =>
-															{
-																debug!("query for {} yielded: {:?}", name.as_ref(), addresses);
-																let response = Response
-																{
-																	result: addresses.into_iter()
-																		.map(|address| ResponseEntry
-																		{
-																			content: format!("{}",address),
-																			qtype: "AAAA".to_string(),
-																			qname: parameters.qname.to_string(),
-																			ttl: 32,
-																		})
-																		.collect::<Vec<_>>()
-																};
-																match serde_json::to_value(response)
-																{
-																	Ok(response) =>
-																	{
-																		if let Err(err) = writeln!(writer, "{}", response.to_string()).await
-																		{
-																			info!("closing unix connection due to error: {}", err);
-																			break;
-																		}
-																		else
-																		{
-																			debug!("sent reply");
-																			continue;
-																		}
-																	}
-																	Err(err) => info!("cannot create JSON value: {}", err),
-																}
-															},
-															Err(err) =>
-															{
-																error!("channel yielded error resolving {}, assuming taint: {}", name.as_ref(), err);
-																Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
-															},
-															Ok(None) => debug!("remote resolve for {} did not get an answer", name.as_ref()),
-														}
-													},
-													Err(err) => info!("not a containername: {}",err),
-												}
-											},
+											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) => debug!("no response for: {} ({})", qtype, qname),
 											Err(err) => info!("could not parse query: {}",err),
 										}
 									},
@@ -582,6 +638,7 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 					break;
 				}
 			}
+			debug!("unix connection closed");
 			Ok(())
 		}
 	}).await?;
