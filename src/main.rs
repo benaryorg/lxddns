@@ -434,15 +434,17 @@ struct Response
 	result: Vec<ResponseEntry>,
 }
 
-async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()>
+async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListener, domain: S, hostmaster: S) -> Result<()>
 {
 	let ref soa = ResponseEntry
 	{
-		content: "lxd.bsocat.net. hostmaster.benary.org. 1 86400 7200 3600000 3600".to_string(),
+		content: format!("{} {} 1 86400 7200 3600000 3600", domain.as_ref(), hostmaster.as_ref()),
 		qtype: "SOA".to_string(),
-		qname: "lxd.bsocat.net.".to_string(),
+		qname: domain.as_ref().to_string(),
 		ttl: 512,
 	};
+
+	let num_dots = domain.as_ref().chars().filter(|&ch| ch == '.').count();
 
 	listener.incoming().map(|res| res.chain_err(|| ErrorKind::MessageQueueChannelTaint)).try_for_each_concurrent(10, |stream|
 	{
@@ -450,6 +452,9 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 		let mut writer = stream;
 		let channel = connection.create_channel();
 		let reader = BufReader::new(writer.clone());
+
+		let domain = domain.as_ref().to_string();
+		let suffix = format!(".{}", domain);
 
 		trace!("starting async task");
 		async move
@@ -486,7 +491,7 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 									{
 										match serde_json::from_slice::<Query>(&input)
 										{
-											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if qname.split('.').count() == 6 && qname.starts_with("_acme-challenge.") && qname.ends_with(".lxd.bsocat.net.") =>
+											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if qname.split('.').count() == (num_dots + 3) && qname.starts_with("_acme-challenge.") && qname.ends_with(suffix.as_str()) =>
 											{
 												debug!("acme-challenge request for {} ({})", qname, qtype);
 												let parts = qname.split('.').collect::<Vec<_>>();
@@ -533,7 +538,7 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 													debug!("no results for {} ({}), not sending response", qname, qtype)
 												}
 											},
-											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if (qtype == "AAAA" || qtype == "ANY") && qname.ends_with(".lxd.bsocat.net.") && qname.split('.').count() == 5 =>
+											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if (qtype == "AAAA" || qtype == "ANY") && qname.ends_with(suffix.as_str()) && qname.split('.').count() == (2 + num_dots) =>
 											{
 												trace!("request for {}", qname);
 												match qname.split('.').next().unwrap().parse::<ContainerName>()
@@ -600,7 +605,7 @@ async fn unixserver(connection: Connection, listener: UnixListener) -> Result<()
 													Err(err) => info!("not a containername: {}",err),
 												}
 											},
-											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if (qtype == "SOA" || qtype == "ANY") && (qname.ends_with(".lxd.bsocat.net.") || qname == "lxd.bsocat.net.") =>
+											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if (qtype == "SOA" || qtype == "ANY") && (qname.ends_with(suffix.as_str()) || qname == domain) =>
 											{
 												match serde_json::to_value(Response { result: vec![soa.clone()], })
 												{
@@ -672,7 +677,6 @@ async fn main() -> !
 			.value_name("AMQP_URL")
 			.default_value("amqp://guest:guest@[::1]:5672")
 			.multiple(false)
-			.global(true)
 		)
 		.arg(Arg::with_name("loglevel")
 			.short("v")
@@ -681,7 +685,24 @@ async fn main() -> !
 			.takes_value(true)
 			.value_name("LOGLEVEL")
 			.multiple(false)
-			.global(true)
+		)
+		.arg(Arg::with_name("hostmaster")
+			.short("h")
+			.long("hostmaster")
+			.help("hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)")
+			.takes_value(true)
+			.value_name("SOA_HOSTMASTER")
+			.multiple(false)
+			.required(true)
+		)
+		.arg(Arg::with_name("domain")
+			.short("d")
+			.long("domain")
+			.help("domain under which to run (do not forget the trailing dot)")
+			.takes_value(true)
+			.value_name("DOMAIN")
+			.multiple(false)
+			.required(true)
 		)
 		.arg(Arg::with_name("socket")
 			.short("s")
@@ -691,7 +712,6 @@ async fn main() -> !
 			.value_name("SOCKET_PATH")
 			.default_value("/var/run/lxddns/lxddns.sock")
 			.multiple(false)
-			.global(true)
 		)
 		.get_matches();
 
@@ -704,12 +724,14 @@ async fn main() -> !
 	info!("logging initialised");
 
 	let url = matches.value_of("url").unwrap();
+	let domain = matches.value_of("domain").unwrap();
+	let hostmaster = matches.value_of("hostmaster").unwrap();
 	let unixpath = Path::new(matches.value_of("socket").unwrap());
 
 	loop
 	{
 		info!("running all services");
-		match run(&unixpath, &url).await
+		match run(&unixpath, &url, &domain, &hostmaster).await
 		{
 			Ok(_) => unreachable!(),
 			Err(err) =>
@@ -727,8 +749,11 @@ async fn main() -> !
 	}
 }
 
-async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S) -> Result<()> // use never when available
+async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S, domain: S, hostmaster: S) -> Result<()> // use never when available
 {
+	let domain = domain.as_ref().to_string();
+	let hostmaster = hostmaster.as_ref().to_string();
+
 	let connection = Connection::connect(url.as_ref(),Default::default()).await?;
 	info!("connection to message queue established");
 
@@ -740,7 +765,7 @@ async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S) -> Result<()> //
 	let listener = UnixListener::bind(unixpath.as_ref()).await?;
 	info!("unix socket opened");
 
-	let unixserver = task::spawn_local(async move { unixserver(connection,listener).await });
+	let unixserver = task::spawn_local(async move { unixserver(connection,listener,domain,hostmaster).await });
 	info!("unixserver started");
 
 	info!("running");
