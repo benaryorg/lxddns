@@ -110,20 +110,23 @@ struct MemoryState
 }
 
 #[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-#[allow(non_camel_case_types)]
 enum AddressFamily
 {
-	inet6,
-	inet,
+	#[serde(rename = "inet6")]
+	Inet6,
+	#[serde(rename = "inet")]
+	Inet,
 }
 
 #[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-#[allow(non_camel_case_types)]
 enum AddressScope
 {
-	local,
-	global,
-	link,
+	#[serde(rename = "local")]
+	Local,
+	#[serde(rename = "global")]
+	Global,
+	#[serde(rename = "link")]
+	Link,
 }
 
 #[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
@@ -294,7 +297,7 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	let addresses = state.network
 		.values()
 		.flat_map(|net| net.addresses.iter())
-		.filter(|address| address.scope == AddressScope::global && address.family == AddressFamily::inet6)
+		.filter(|address| address.scope == AddressScope::Global && address.family == AddressFamily::Inet6)
 		.filter_map(|address| address.address.parse::<Ipv6Addr>().ok())
 		.collect::<Vec<_>>();
 
