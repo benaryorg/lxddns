@@ -46,6 +46,7 @@ use ::
 	serde::
 	{
 		Deserialize,
+		Deserializer,
 		Serialize,
 	},
 	serde_json::
@@ -390,12 +391,23 @@ async fn responder(channel: Channel) -> Result<()>
 	Ok(())
 }
 
+fn deserialize_string_lowercase<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+	where
+		D: Deserializer<'de>
+{
+	let mut string = String::deserialize(deserializer)?;
+	string.make_ascii_lowercase();
+	Ok(string)
+}
+
 #[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
 struct QueryParameters
 {
-	qtype: String,
+	#[serde(deserialize_with = "deserialize_string_lowercase")]
 	qname: String,
-	// *not* optional -.- // zone_id: isize,
+	qtype: String,
+	#[serde(default)]
+	zone_id: isize,
 	// unused: remote, local, real-remote
 }
 
