@@ -674,6 +674,7 @@ async fn main() -> !
 			.long("url")
 			.help("connection string for the message queue")
 			.takes_value(true)
+			.env("LXDDNS_URL")
 			.value_name("AMQP_URL")
 			.default_value("amqp://guest:guest@[::1]:5672")
 			.multiple(false)
