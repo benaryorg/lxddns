@@ -436,7 +436,7 @@ struct Response
 
 async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListener, domain: S, hostmaster: S) -> Result<()>
 {
-	let ref soa = ResponseEntry
+	let soa = &ResponseEntry
 	{
 		content: format!("{} {} 1 86400 7200 3600000 3600", domain.as_ref(), hostmaster.as_ref()),
 		qtype: "SOA".to_string(),
@@ -459,7 +459,7 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 		trace!("starting async task");
 		async move
 		{
-			let mut channel = channel.await.chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
+			let channel = channel.await.chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
 			trace!("async task running");
 			let mut lines = reader.split(b'\n');
 			while let Some(input) = lines.next().await
@@ -546,7 +546,7 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 													Ok(name) =>
 													{
 														debug!("querying for {}", name.as_ref());
-														match remote_query(&mut channel,&name).await
+														match remote_query(&channel,&name).await
 														{
 															Ok(result) =>
 															{

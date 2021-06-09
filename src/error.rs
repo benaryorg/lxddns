@@ -45,7 +45,7 @@ error_chain!
 		{
 			description("command execution failed")
 			display("local resolution via command execution failed {}",
-				error.clone().map(|err| format!("with: '{}'",err)).unwrap_or("without error".to_string())
+				error.clone().map(|err| format!("with: '{}'",err)).unwrap_or_else(|| "without error".to_string())
 			)
 		}
 		UnsafeName(name: String)
