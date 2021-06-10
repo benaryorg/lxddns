@@ -1,5 +1,25 @@
-mod error;
-use error::*;
+pub mod error;
+pub mod lxd;
+pub mod pdns;
+
+use self::
+{
+	error::*,
+	lxd::
+	{
+		AddressFamily,
+		AddressScope,
+		ContainerState,
+		ContainerName,
+	},
+	pdns::
+	{
+		LookupType,
+		Query,
+		Response,
+		ResponseEntry,
+	},
+};
 
 use ::
 {
@@ -51,10 +71,10 @@ use ::
 	},
 	serde_json::
 	{
-		Value,
 		json,
 	},
 	uuid::Uuid,
+	getset::Getters,
 	async_std::
 	{
 		prelude::*,
@@ -88,117 +108,6 @@ use ::
 		net::Ipv6Addr,
 	},
 };
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct CpuState
-{
-	usage: u128,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct DiskState
-{
-	usage: u128,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct MemoryState
-{
-	swap_usage: u128,
-	swap_usage_peak: u128,
-	usage: u128,
-	usage_peak: u128,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-enum AddressFamily
-{
-	#[serde(rename = "inet6")]
-	Inet6,
-	#[serde(rename = "inet")]
-	Inet,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-enum AddressScope
-{
-	#[serde(rename = "local")]
-	Local,
-	#[serde(rename = "global")]
-	Global,
-	#[serde(rename = "link")]
-	Link,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct Address
-{
-	address: String,
-	family: AddressFamily,
-	scope: AddressScope,
-	netmask: String,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct NetCounters
-{
-	bytes_received: u128,
-	bytes_sent: u128,
-	packets_received: u128,
-	packets_sent: u128,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct NetState
-{
-	addresses: Vec<Address>,
-	counters: NetCounters,
-	host_name: String,
-	hwaddr: String,
-	mtu: usize,
-	state: String,
-	// too lazy to find a workaround
-	// type: String,
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Debug)]
-struct ContainerState
-{
-	pid: usize,
-	processes: usize,
-	// probably breaks if enum
-	status: String,
-	status_code: usize,
-	cpu: CpuState,
-	disk: HashMap<String,DiskState>,
-	network: HashMap<String,NetState>,
-	memory: MemoryState,
-}
-
-#[derive(Hash,Clone,Eq,Ord,PartialEq,PartialOrd,Debug)]
-struct ContainerName(String);
-
-impl AsRef<str> for ContainerName
-{
-	fn as_ref(&self) -> &str
-	{
-		self.0.as_str()
-	}
-}
-
-impl FromStr for ContainerName
-{
-	type Err = Error;
-
-	fn from_str(name: &str) -> Result<Self>
-	{
-		if !static_regex!(r"\A[-a-z0-9]+\z").is_match(&name)
-		{
-			bail!(ErrorKind::UnsafeName(name.to_string()))
-		}
-		Ok(Self(name.to_string()))
-	}
-}
 
 async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
@@ -289,17 +198,17 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	trace!("local query got response for {}",name.as_ref());
 	let state: ContainerState = serde_json::from_slice(&output.stdout).chain_err(|| ErrorKind::LocalOutput)?;
 
-	if state.status != "Running"
+	if state.status() != "Running"
 	{
 		trace!("local query got says {} is not running",name.as_ref());
 		return Ok(None);
 	}
 
-	let addresses = state.network
+	let addresses = state.network()
 		.values()
-		.flat_map(|net| net.addresses.iter())
-		.filter(|address| address.scope == AddressScope::Global && address.family == AddressFamily::Inet6)
-		.filter_map(|address| address.address.parse::<Ipv6Addr>().ok())
+		.flat_map(|net| net.addresses().iter())
+		.filter(|address| address.scope() == &AddressScope::Global && address.family() == &AddressFamily::Inet6)
+		.filter_map(|address| address.address().parse::<Ipv6Addr>().ok())
 		.collect::<Vec<_>>();
 
 	trace!("local query for {} yielded: {:?}", name.as_ref(), addresses);
@@ -391,62 +300,11 @@ async fn responder(channel: Channel) -> Result<()>
 	Ok(())
 }
 
-fn deserialize_string_lowercase<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
-	where
-		D: Deserializer<'de>
-{
-	let mut string = String::deserialize(deserializer)?;
-	string.make_ascii_lowercase();
-	Ok(string)
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct QueryParameters
-{
-	#[serde(deserialize_with = "deserialize_string_lowercase")]
-	qname: String,
-	qtype: String,
-	#[serde(default)]
-	zone_id: isize,
-	// unused: remote, local, real-remote
-}
-
-#[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct Query
-{
-	method: String,
-	parameters: QueryParameters,
-}
-
-#[derive(Serialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct ResponseEntry
-{
-	qtype: String,
-	qname: String,
-	content: String,
-	ttl: usize,
-	// unused: domain_id,scopeMask,auth
-}
-
-#[derive(Serialize,Clone,Eq,PartialEq,Hash,Debug)]
-struct Response
-{
-	result: Vec<ResponseEntry>,
-}
-
 async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListener, domain: S, hostmaster: S) -> Result<()>
 {
-	let soa = &ResponseEntry
-	{
-		content: format!("{} {} 1 86400 7200 3600000 3600", domain.as_ref(), hostmaster.as_ref()),
-		qtype: "SOA".to_string(),
-		qname: domain.as_ref().to_string(),
-		ttl: 512,
-	};
+	let soa_record = &ResponseEntry::soa(&domain, &hostmaster);
 
-	let num_dots = domain.as_ref().chars().filter(|&ch| ch == '.').count();
-
-	listener.incoming().map(|res| res.chain_err(|| ErrorKind::MessageQueueChannelTaint)).try_for_each_concurrent(10, |stream|
+	listener.incoming().map(|res| res.map_err(|err| ErrorKind::UnixServerError(Box::new(err.into())))).try_for_each_concurrent(10, |stream|
 	{
 		debug!("connection on unix socket");
 		let mut writer = stream;
@@ -454,7 +312,6 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 		let reader = BufReader::new(writer.clone());
 
 		let domain = domain.as_ref().to_string();
-		let suffix = format!(".{}", domain);
 
 		trace!("starting async task");
 		async move
@@ -476,186 +333,149 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 				};
 
 				trace!("parsing request");
-				match serde_json::from_slice::<Value>(&input)
+				match serde_json::from_slice::<Query>(&input)
 				{
-					Ok(Value::Object(obj)) =>
+					Ok(Query::Lookup { parameters: query, }) => 
 					{
-						match obj.get("method")
+						debug!("query: {} ({})", query.qname(), query.qtype());
+
+						match query.type_for_domain(&domain)
 						{
-							Some(Value::String(method)) =>
+							LookupType::SendAcme { soa, domain, } =>
 							{
-								trace!("request has method {}", method);
-								match method.as_str()
+								debug!("acme-challenge response for {}: {} {} SOA", query.qname(), domain, if soa { "with" } else { "without" });
+
+								let mut vec = vec![ResponseEntry::ns(query.qname(), domain)];
+
+								if soa
 								{
-									"lookup" => 
+									vec.push(soa_record.clone());
+								}
+
+								match serde_json::to_string(&Response::from(vec))
+								{
+									Ok(json) =>
 									{
-										match serde_json::from_slice::<Query>(&input)
+										if let Err(err) = writeln!(writer, "{}", json).await
 										{
-											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if qname.split('.').count() == (num_dots + 3) && qname.starts_with("_acme-challenge.") && qname.ends_with(suffix.as_str()) =>
-											{
-												debug!("acme-challenge request for {} ({})", qname, qtype);
-												let parts = qname.split('.').collect::<Vec<_>>();
-												let iscontainer = parts.get(1).unwrap().parse::<ContainerName>().is_ok();
-												let containerdomain = parts.into_iter().skip(1).collect::<Vec<_>>().join(".");
-												debug!("responding to acme-challenge query for {} with NS {}", qname, containerdomain);
-
-												let mut vec = Vec::new();
-
-												if iscontainer && qtype != "SOA"
-												{
-													vec.push(ResponseEntry
-													{
-														content: containerdomain.clone(),
-														qtype: "NS".to_string(),
-														qname: qname.to_string(),
-														ttl: 7200,
-													});
-													debug!("acme-challenge ({}) for container name {}", qtype, qname);
-												}
-
-												if !vec.is_empty()
-												{
-													match serde_json::to_value(Response { result: vec, })
-													{
-														Ok(response) =>
-														{
-															if let Err(err) = writeln!(writer, "{}", response.to_string()).await
-															{
-																info!("closing unix connection due to error: {}", err);
-																break;
-															}
-															else
-															{
-																debug!("sent reply");
-																continue;
-															}
-														}
-														Err(err) => info!("cannot create JSON value: {}", err),
-													}
-												}
-												else
-												{
-													debug!("no results for {} ({}), not sending response", qname, qtype)
-												}
-											},
-											Ok(Query { parameters: QueryParameters { qname, qtype, .. }, .. }) if (qtype == "AAAA" || qtype == "ANY") && qname.ends_with(suffix.as_str()) && qname.split('.').count() == (2 + num_dots) =>
-											{
-												trace!("request for {}", qname);
-												match qname.split('.').next().unwrap().parse::<ContainerName>()
-												{
-													Ok(name) =>
-													{
-														debug!("querying for {}", name.as_ref());
-														match remote_query(&channel,&name).await
-														{
-															Ok(result) =>
-															{
-																debug!("query for {} yielded: {:?}", name.as_ref(), result);
-																let mut vec = Vec::new();
-																if qtype == "ANY"
-																{
-																	vec.push(soa.clone());
-																}
-
-																if let Some(addresses) = result
-																{
-																	vec.extend(addresses.into_iter()
-																		.map(|address| ResponseEntry
-																		{
-																			content: format!("{}", address),
-																			qtype: "AAAA".to_string(),
-																			qname: qname.to_string(),
-																			ttl: 32,
-																		})
-																	);
-																}
-
-																if !vec.is_empty()
-																{
-																	match serde_json::to_value(Response { result: vec, })
-																	{
-																		Ok(response) =>
-																		{
-																			if let Err(err) = writeln!(writer, "{}", response.to_string()).await
-																			{
-																				info!("closing unix connection due to error: {}", err);
-																				break;
-																			}
-																			else
-																			{
-																				debug!("sent reply");
-																				continue;
-																			}
-																		}
-																		Err(err) => info!("cannot create JSON value: {}", err),
-																	}
-																}
-																else
-																{
-																	debug!("no results for {} ({}), not sending response", qname, qtype)
-																}
-															},
-															Err(err) =>
-															{
-																error!("channel yielded error resolving {}, assuming taint: {}", name.as_ref(), err);
-																Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
-															},
-														}
-													},
-													Err(err) => info!("not a containername: {}",err),
-												}
-											},
-											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) if (qtype == "SOA" || qtype == "ANY") && (qname.ends_with(suffix.as_str()) || qname == domain) =>
-											{
-												match serde_json::to_value(Response { result: vec![soa.clone()], })
-												{
-													Ok(response) =>
-													{
-														if let Err(err) = writeln!(writer, "{}", response.to_string()).await
-														{
-															info!("closing unix connection due to error: {}", err);
-															break;
-														}
-														else
-														{
-															debug!("sent the SOA record for {}", qname);
-															continue;
-														}
-													}
-													Err(err) => info!("cannot create JSON value: {}", err),
-												}
-											},
-											Ok(Query { parameters: QueryParameters { qtype, qname, .. }, .. }) => debug!("no response for: {} ({})", qtype, qname),
-											Err(err) => info!("could not parse query: {}",err),
-										}
-									},
-									"initialize" =>
-									{
-										if let Err(err) = writeln!(writer,"{}",json!({ "result": true }).to_string()).await
-										{
-											info!("closing unix connection due to error: {}", err);
+											info!("closing unix stream due to error: {}", err);
 											break;
 										}
-										else
-										{
-											continue;
-										}
-									}
-									_ => info!("unknown method: {}", method),
+									},
+									Err(err) => 
+									{
+										info!("closing unix stream due to error: {}", err);
+										break;
+									},
 								}
 							},
-							Some(_) => info!("method not string"),
-							None => info!("no method provided"),
-						}
-					}
-					Ok(_) => info!("input not an object"),
-					Err(err) => info!("input not JSON: {}", err),
-				}
+							LookupType::SendAaaa { soa, container, domain, } =>
+							{
+								debug!("querying for {}", container.name());
+								match remote_query(&channel,&container).await
+								{
+									Ok(result) =>
+									{
+										debug!("query for {} yielded: {:?}", container.name(), result);
+										let mut vec = Vec::new();
+										if soa
+										{
+											vec.push(soa_record.clone());
+										}
 
-				if let Err(err) = writeln!(writer, "{}", json!({ "result": false }).to_string()).await
-				{
-					info!("closing unix connection due to error: {}", err);
-					break;
+										if let Some(addresses) = result
+										{
+											vec.extend(addresses.into_iter()
+												.map(|address| ResponseEntry::aaaa(&domain, address))
+											);
+										}
+
+										match serde_json::to_string(&Response::from(vec))
+										{
+											Ok(json) =>
+											{
+												if let Err(err) = writeln!(writer, "{}", json).await
+												{
+													info!("closing unix stream due to error: {}", err);
+													break;
+												}
+											},
+											Err(err) => 
+											{
+												info!("closing unix stream due to error: {}", err);
+												break;
+											},
+										}
+									},
+									Err(err) =>
+									{
+										error!("channel yielded error resolving {}, assuming taint: {}", domain, err);
+										Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
+									},
+								}
+							},
+							LookupType::SendSoa(domain) =>
+							{
+								debug!("sending soa for {}", domain);
+								match serde_json::to_string(&Response::from(vec![soa_record.clone()]))
+								{
+									Ok(json) =>
+									{
+										if let Err(err) = writeln!(writer, "{}", json).await
+										{
+											info!("closing unix stream due to error: {}", err);
+											break;
+										}
+									},
+									Err(err) => 
+									{
+										info!("closing unix stream due to error: {}", err);
+										break;
+									},
+								}
+							},
+							LookupType::WrongDomain(domain) =>
+							{
+								debug!("request for unknown domain: {}", domain);
+								if let Err(err) = writeln!(writer, r#"{{"result": false}}"#).await
+								{
+									info!("closing unix stream due to error: {}", err);
+									break;
+								}
+							},
+							LookupType::Unknown { domain, qtype, } =>
+							{
+								debug!("unknown request: {} ({})", domain, qtype);
+								if let Err(err) = writeln!(writer, "{}", json!({ "result": true }).to_string()).await
+								{
+									info!("closing unix stream due to error: {}", err);
+									break;
+								}
+							},
+						}
+					},
+					Ok(Query::Initialize) =>
+					{
+						if let Err(err) = writeln!(writer, "{}", json!({ "result": true }).to_string()).await
+						{
+							info!("closing unix stream due to error: {}", err);
+							break;
+						}
+					},
+					Ok(Query::Unknown) =>
+					{
+						debug!("unknown method: {:?}", String::from_utf8_lossy(&input));
+						if let Err(err) = writeln!(writer, "{}", json!({ "result": false }).to_string()).await
+						{
+							info!("closing unix connection due to error: {}", err);
+							break;
+						}
+					},
+					Err(err) =>
+					{
+						info!("error parsing request: {}", err);
+						break;
+					},
 				}
 			}
 			debug!("unix connection closed");
