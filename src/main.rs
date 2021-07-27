@@ -327,7 +327,7 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 					Err(err) =>
 					{
 						warn!("unix connection erred: {}", err);
-						continue;
+						break;
 					},
 					Ok(ok) => ok,
 				};
