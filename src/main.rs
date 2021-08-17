@@ -110,7 +110,7 @@ use ::
 
 async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
-	debug!("starting remote query for {}", name.as_ref());
+	debug!("[remote_query][{}] starting query", name.as_ref());
 	channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
 	let queue = channel.queue_declare(
 		"",
@@ -134,31 +134,38 @@ async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<
 	).await?;
 
 	let correlation_id = format!("{}", Uuid::new_v4());
-	trace!("query for {} has correlation id: {}", name.as_ref(), correlation_id);
+	trace!("[remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
 
 	channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes().to_vec(),
 		AMQPProperties::default()
 			.with_correlation_id(correlation_id.clone().into())
 			.with_reply_to(queue.name().clone())
 	).await?;
-	trace!("query for {} published the message", name.as_ref());
+	trace!("[remote_query][{}][{}] published message", name.as_ref(), correlation_id);
 
 	let mut result = None;
 
 	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(Duration::from_millis(1000)).await
 	{
+		trace!("[remote_query][{}][{}] got response", name.as_ref(), correlation_id);
+
 		if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
 		{
 			if let Ok(addresses) = delivery.data.chunks(16)
 				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
 				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
 			{
+				trace!("[remote_query][{}][{}] got response: {:?}", name.as_ref(), correlation_id, addresses);
 				result.get_or_insert_with(|| Vec::new()).extend(addresses);
+			}
+			else
+			{
+				debug!("[remote_query][{}][{}] invalid content", name.as_ref(), correlation_id);
 			}
 		}
 		else
 		{
-			debug!("silently dropping message without either correlation_id or reply_to");
+			debug!("[remote_query][{}][{}] missing reply_to or correlation_id", name.as_ref(), correlation_id);
 		}
 	}
 	Ok(result)
@@ -166,7 +173,7 @@ async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<
 
 async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
-	trace!("starting local query for {}", name.as_ref());
+	trace!("[local_query][{}] starting query", name.as_ref());
 
 	let instant = Instant::now();
 
@@ -262,8 +269,8 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 			return Ok(None);
 		}
 	};
-	
 
+	trace!("[local_query][{}] querying state", name.as_ref());
 	let output = Command::new("sudo")
 		.arg("lxc")
 		.arg("query")
@@ -276,25 +283,25 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 		.await
 		.chain_err(|| ErrorKind::LocalExecution(None))?;
 
-	debug!("local query ran for {:.3}s", instant.elapsed().as_secs_f64());
+	debug!("[local_query][{}] query ran for {:.3}s", name.as_ref(), instant.elapsed().as_secs_f64());
 
 	if !output.status.success()
 	{
 		if &output.stderr == b"Error: not found\n"
 		{
-			trace!("local query got \"not found\" for {}", name.as_ref());
+			trace!("[local_query][{}] \"not found\"", name.as_ref());
 			return Ok(None);
 		}
 		let err = String::from_utf8_lossy(&output.stderr);
 		bail!(ErrorKind::LocalExecution(Some(err.to_string())))
 	}
 
-	trace!("local query got response for {}",name.as_ref());
+	trace!("[local_query][{}] got response", name.as_ref());
 	let state: ContainerState = serde_json::from_slice(&output.stdout).chain_err(|| ErrorKind::LocalOutput)?;
 
 	if state.status() != "Running"
 	{
-		trace!("local query got says {} is not running", name.as_ref());
+		trace!("[local_query][{}] not running", name.as_ref());
 		return Ok(None);
 	}
 
@@ -305,7 +312,7 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 		.filter_map(|address| address.address().parse::<Ipv6Addr>().ok())
 		.collect::<Vec<_>>();
 
-	trace!("local query for {} yielded: {:?}", name.as_ref(), addresses);
+	trace!("[local_query][{}] result: {:?}", name.as_ref(), addresses);
 
 	Ok(Some(addresses))
 }
@@ -313,7 +320,7 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 async fn responder(channel: Channel) -> Result<()>
 {
 	channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
-	trace!("created fanout exchange");
+	trace!("[responder] created fanout exchange");
 
 	let queue = channel.queue_declare(
 		"",
@@ -325,10 +332,10 @@ async fn responder(channel: Channel) -> Result<()>
 		},
 		Default::default()
 	).await?;
-	trace!("created queue");
+	trace!("[responder] created queue");
 
 	channel.queue_bind(queue.name().as_str(), "lxddns", "lxddns", Default::default(), Default::default()).await?;
-	trace!("bound exchange to queue");
+	trace!("[responder] bound exchange to queue");
 
 	// Start a consumer.
 	let mut consumer = channel.basic_consume(queue.name().as_str(),
@@ -341,20 +348,20 @@ async fn responder(channel: Channel) -> Result<()>
 		},
 		Default::default()
 	).await?;
-	info!("responder online");
+	info!("[responder] running");
 
 	while let Some(Ok((_,delivery))) = consumer.next().await
 	{
-		debug!("received message");
+		debug!("[responder] received message");
 		let name = String::from_utf8_lossy(&delivery.data);
-		debug!("request for {}", name);
+		debug!("[responder][{}] received request", name);
 
 		let name = match name.parse::<ContainerName>()
 		{
 			Ok(ok) => ok,
 			Err(_) =>
 			{
-				info!("invalid name: {}", name);
+				info!("[responder][{}] invalid name", name);
 				continue;
 			},
 		};
@@ -364,22 +371,27 @@ async fn responder(channel: Channel) -> Result<()>
 			(Some(reply_to),Some(corr_id)) => (reply_to,corr_id),
 			_ =>
 			{
-				info!("received message without reply_to or correlation_id; acking and ignoring");
+				info!("[responder][{}] message without reply_to or correlation_id; acking and ignoring", name.as_ref());
 				continue;
 			}
 		};
 
 		let addresses = match local_query(&name).await
 		{
-			Ok(Some(addresses)) => addresses,
+			Ok(Some(addresses)) =>
+			{
+				trace!("[responder][{}] got {:?}", name.as_ref(), addresses);
+
+				addresses
+			},
 			Ok(_) =>
 			{
-				trace!("no info on {}, skipping", name.as_ref());
+				trace!("[responder][{}] no info, skipping", name.as_ref());
 				continue;
 			},
 			Err(err) =>
 			{
-				warn!("failure on getting local record: {}", err);
+				warn!("[responder][{}] query error: {}", name.as_ref(), err);
 				continue;
 			},
 		};
@@ -389,6 +401,7 @@ async fn responder(channel: Channel) -> Result<()>
 			AMQPProperties::default()
 				.with_correlation_id(corr_id.clone())
 		).await?;
+		trace!("[responder][{}] message published", name.as_ref());
 	}
 
 	Ok(())
@@ -400,38 +413,38 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 
 	listener.incoming().map(|res| res.map_err(|err| ErrorKind::UnixServerError(Box::new(err.into())))).try_for_each_concurrent(10, |stream|
 	{
-		debug!("connection on unix socket");
+		debug!("[unixserver] connection opened");
 		let mut writer = stream;
 		let channel = connection.create_channel();
 		let reader = BufReader::new(writer.clone());
 
 		let domain = domain.as_ref().to_string();
 
-		trace!("starting async task");
+		trace!("[unix_server] starting async task");
 		async move
 		{
 			let channel = channel.await.chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
-			trace!("async task running");
+			trace!("[unixserver] async task running");
 			let mut lines = reader.split(b'\n');
 			while let Some(input) = lines.next().await
 			{
-				trace!("request on unix domain socket");
+				trace!("[unixserver] request received");
 				let input = match input
 				{
 					Err(err) =>
 					{
-						warn!("unix connection erred: {}", err);
+						warn!("[unixserver] read error: {}", err);
 						break;
 					},
 					Ok(ok) => ok,
 				};
 
-				trace!("parsing request");
+				trace!("[unixserver] parsing request");
 				match serde_json::from_slice::<Query>(&input)
 				{
 					Ok(Query::Lookup { parameters: query, }) => 
 					{
-						debug!("query: {} ({})", query.qname(), query.qtype());
+						debug!("[unixserver][{}] type {}", query.qname(), query.qtype());
 
 						match query.type_for_domain(&domain)
 						{
@@ -453,20 +466,20 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 											{
 												if let Err(err) = writeln!(writer, "{}", json).await
 												{
-													info!("closing unix stream due to error: {}", err);
+													warn!("[unixserver][{}] closing unix stream due to socket error: {}", query.qname(), err);
 													break;
 												}
 											},
 											Err(err) => 
 											{
-												info!("closing unix stream due to error: {}", err);
+												warn!("[unixserver][{}] closing unix stream due to json error: {}", query.qname(), err);
 												break;
 											},
 										}
 									},
 									Err(err) =>
 									{
-										error!("channel yielded error resolving {}, assuming taint: {}", domain, err);
+										error!("[unixserver][{}] resolve error, assuming taint: {}", query.qname(), err);
 										Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
 									},
 								}
@@ -483,13 +496,13 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 									{
 										if let Err(err) = writeln!(writer, "{}", json).await
 										{
-											info!("closing unix stream due to error: {}", err);
+											warn!("[unixserver][{}] closing unix stream due to socket error: {}", query.qname(), err);
 											break;
 										}
 									},
 									Err(err) => 
 									{
-										info!("closing unix stream due to error: {}", err);
+										warn!("[unixserver][{}] closing unix stream due to json error: {}", query.qname(), err);
 										break;
 									},
 								}
@@ -500,27 +513,27 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 					{
 						if let Err(err) = writeln!(writer, "{}", json!({ "result": true }).to_string()).await
 						{
-							info!("closing unix stream due to error: {}", err);
+							warn!("[unixserver] closing unix stream due to socket error: {}", err);
 							break;
 						}
 					},
 					Ok(Query::Unknown) =>
 					{
-						debug!("unknown method: {:?}", String::from_utf8_lossy(&input));
+						debug!("[unixserver] unknown method: {:?}", String::from_utf8_lossy(&input));
 						if let Err(err) = writeln!(writer, "{}", json!({ "result": false }).to_string()).await
 						{
-							info!("closing unix connection due to error: {}", err);
+							warn!("[unixserver] closing unix stream due to socket error: {}", err);
 							break;
 						}
 					},
 					Err(err) =>
 					{
-						info!("error parsing request: {}", err);
+						warn!("[unixserver] error parsing request: {}", err);
 						break;
 					},
 				}
 			}
-			debug!("unix connection closed");
+			debug!("[unixserver] connection closed");
 			Ok(())
 		}
 	}).await?;
@@ -584,7 +597,7 @@ async fn main() -> !
 	}
 
 	env_logger::init();
-	info!("logging initialised");
+	info!("[main] logging initialised");
 
 	let url = matches.value_of("url").unwrap();
 	let domain = matches.value_of("domain").unwrap();
@@ -593,18 +606,18 @@ async fn main() -> !
 
 	loop
 	{
-		info!("running all services");
+		info!("[main] running all services");
 		match run(&unixpath, &url, &domain, &hostmaster).await
 		{
 			Ok(_) => unreachable!(),
 			Err(err) =>
 			{
-				error!("fatal error occured: {}",err);
+				error!("[main] fatal error occured: {}", err);
 				for err in err.iter()
 				{
-					error!("caused by: {}",err);
+					error!("[main] caused by: {}", err);
 				}
-				error!("restarting all services");
+				error!("[main] restarting all services");
 			},
 		}
 		let _ = remove_file(&unixpath).await;
@@ -618,20 +631,20 @@ async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S, domain: S, hostm
 	let hostmaster = hostmaster.as_ref().to_string();
 
 	let connection = Connection::connect(url.as_ref(),Default::default()).await?;
-	info!("connection to message queue established");
+	info!("[run] connection to message queue established");
 
 	let channel = connection.create_channel().await?;
-	debug!("channel created");
+	debug!("[run] channel created");
 	let responder = task::spawn_local(async move { responder(channel).await });
-	info!("responder spawned");
+	info!("[run] responder spawned");
 
 	let listener = UnixListener::bind(unixpath.as_ref()).await?;
-	info!("unix socket opened");
+	info!("[run] unix socket opened");
 
 	let unixserver = task::spawn_local(async move { unixserver(connection,listener,domain,hostmaster).await });
-	info!("unixserver started");
+	info!("[run] unixserver started");
 
-	info!("running");
+	info!("[run] running");
 	match future::select(unixserver,responder).await
 	{
 		future::Either::Left((Ok(()), _)) => Err(ErrorKind::UnixServerClosed.into()),
