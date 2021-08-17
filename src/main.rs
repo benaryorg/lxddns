@@ -16,7 +16,6 @@ use self::
 	{
 		LookupType,
 		Query,
-		Response,
 		ResponseEntry,
 	},
 };
@@ -192,11 +191,6 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	trace!("[local_query][{}] validating instance list command output", name.as_ref());
 	if !output.status.success()
 	{
-		if &output.stderr == b"Error: not found\n"
-		{
-			trace!("local query got \"not found\" for {}",name.as_ref());
-			return Ok(None);
-		}
 		let err = String::from_utf8_lossy(&output.stderr);
 		bail!(ErrorKind::LocalExecution(Some(err.to_string())))
 	}
@@ -441,56 +435,19 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 
 						match query.type_for_domain(&domain)
 						{
-							LookupType::SendAcme { soa, domain, } =>
+							LookupType::Smart { container, response, } =>
 							{
-								debug!("acme-challenge response for {}: {} {} SOA", query.qname(), domain, if soa { "with" } else { "without" });
+								debug!("[unixserver][{}] smart response, querying {}", query.qname(), container.as_ref());
 
-								let mut vec = vec![ResponseEntry::ns(query.qname(), domain)];
-
-								if soa
-								{
-									vec.push(soa_record.clone());
-								}
-
-								match serde_json::to_string(&Response::from(vec))
-								{
-									Ok(json) =>
-									{
-										if let Err(err) = writeln!(writer, "{}", json).await
-										{
-											info!("closing unix stream due to error: {}", err);
-											break;
-										}
-									},
-									Err(err) => 
-									{
-										info!("closing unix stream due to error: {}", err);
-										break;
-									},
-								}
-							},
-							LookupType::SendAaaa { soa, container, domain, } =>
-							{
-								debug!("querying for {}", container.name());
 								match remote_query(&channel,&container).await
 								{
 									Ok(result) =>
 									{
-										debug!("query for {} yielded: {:?}", container.name(), result);
-										let mut vec = Vec::new();
-										if soa
-										{
-											vec.push(soa_record.clone());
-										}
+										debug!("[unixserver][{}] got {:?}", query.qname(), result);
 
-										if let Some(addresses) = result
-										{
-											vec.extend(addresses.into_iter()
-												.map(|address| ResponseEntry::aaaa(&domain, address))
-											);
-										}
+										let response = response.response(query.qname(), &soa_record, result);
 
-										match serde_json::to_string(&Response::from(vec))
+										match serde_json::to_string(&response)
 										{
 											Ok(json) =>
 											{
@@ -514,10 +471,13 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 									},
 								}
 							},
-							LookupType::SendSoa(domain) =>
+							LookupType::Dumb { response, } =>
 							{
-								debug!("sending soa for {}", domain);
-								match serde_json::to_string(&Response::from(vec![soa_record.clone()]))
+								debug!("[unixserver][{}] dumb response", query.qname());
+
+								let response = response.response(query.qname(), &soa_record);
+
+								match serde_json::to_string(&response)
 								{
 									Ok(json) =>
 									{
@@ -532,24 +492,6 @@ async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListene
 										info!("closing unix stream due to error: {}", err);
 										break;
 									},
-								}
-							},
-							LookupType::WrongDomain(domain) =>
-							{
-								debug!("request for unknown domain: {}", domain);
-								if let Err(err) = writeln!(writer, r#"{{"result": false}}"#).await
-								{
-									info!("closing unix stream due to error: {}", err);
-									break;
-								}
-							},
-							LookupType::Unknown { domain, qtype, } =>
-							{
-								debug!("unknown request: {} ({})", domain, qtype);
-								if let Err(err) = writeln!(writer, "{}", json!({ "result": true }).to_string()).await
-								{
-									info!("closing unix stream due to error: {}", err);
-									break;
 								}
 							},
 						}

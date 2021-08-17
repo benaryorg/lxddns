@@ -6,28 +6,121 @@ use super::
 	Serialize,
 	ContainerName,
 	Ipv6Addr,
+	trace,
+	debug,
 };
 
 pub enum LookupType
 {
-	SendAaaa
+	Smart
 	{
-		soa: bool,
-		domain: String,
 		container: ContainerName,
+		response: SmartResponse
 	},
-	SendAcme
+	Dumb
+	{
+		response: DumbResponse,
+	},
+}
+
+pub enum SmartResponse
+{
+	Aaaa
 	{
 		soa: bool,
-		domain: String,
 	},
-	SendSoa(String),
-	WrongDomain(String),
-	Unknown
+	Soa,
+}
+
+impl SmartResponse
+{
+	pub fn response<S: AsRef<str>>(self, qname: S, soa: &ResponseEntry, addresses: Option<Vec<Ipv6Addr>>) -> Response
 	{
-		domain: String,
-		qtype: String,
+		trace!("[smartresponse][{}] response", qname.as_ref());
+
+		match self
+		{
+			SmartResponse::Soa =>
+			{
+				trace!("[smartresponse][{}][soa] checking addresses", qname.as_ref());
+
+				if addresses.is_some()
+				{
+					debug!("[smartresponse][{}][soa] adding soa", qname.as_ref());
+
+					vec![soa.clone()].into()
+				}
+				else
+				{
+					debug!("[smartresponse][{}][soa] sending nxdomain", qname.as_ref());
+
+					DumbResponse::Nxdomain.response(qname, soa)
+				}
+			},
+			SmartResponse::Aaaa { soa: send_soa, } =>
+			{
+				trace!("[smartresponse][{}][aaaa] checking addresses", qname.as_ref());
+
+				if let Some(addresses) = addresses
+				{
+					trace!("[smartresponse][{}][aaaa] has addresses, building response", qname.as_ref());
+
+					let mut vec = addresses.into_iter()
+						.map(|addr| ResponseEntry::aaaa(qname.as_ref().clone(), addr))
+						.collect::<Vec<_>>();
+
+					if send_soa
+					{
+						trace!("[smartresponse][{}][aaaa] adding soa", qname.as_ref());
+						vec.push(soa.clone());
+					}
+
+					vec.into()
+				}
+				else
+				{
+					trace!("[smartresponse][{}][aaaa] sending nxdomain", qname.as_ref());
+					DumbResponse::Nxdomain.response(qname, soa)
+				}
+			},
+		}
+	}
+}
+
+pub enum DumbResponse
+{
+	Acme
+	{
+		target: String,
 	},
+	Nxdomain,
+	Soa,
+}
+
+impl DumbResponse
+{
+	pub fn response<S: AsRef<str>>(self, qname: S, soa: &ResponseEntry) -> Response
+	{
+		trace!("[dumbresponse][{}] responding", qname.as_ref());
+		match self
+		{
+			DumbResponse::Acme { target, } =>
+			{
+				debug!("[dumbresponse][{}][acme] responding with {}", qname.as_ref(), target);
+				vec![ResponseEntry::ns(qname, target)].into()
+			},
+			DumbResponse::Nxdomain =>
+			{
+				debug!("[dumbresponse][{}][nxdomain] responding", qname.as_ref());
+				vec![].into()
+			},
+			DumbResponse::Soa =>
+			{
+				debug!("[dumbresponse][{}][soa] responding", qname.as_ref());
+				vec![soa.clone()].into()
+			},
+		}
+	}
 }
 
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
@@ -48,78 +141,116 @@ impl QueryParameters
 {
 	pub fn type_for_domain<S: AsRef<str>>(&self, domain: S) -> LookupType
 	{
-		let domain_dots = domain.as_ref().chars().filter(|&ch| ch == '.').count();
-		let num_dots = self.qname.chars().filter(|&ch| ch == '.').count();
+		trace!("[queryparameters][type_for_domain][{}][{}] parsing for {}", self.qname(), self.qtype(), domain.as_ref());
+
 		let suffix = format!(".{}", domain.as_ref());
-
-		// make sure this instance is supposed to answer
-		//  the rest of the code assumes SOA for the zone is acceptable
-		if !self.qname.ends_with(&suffix) && self.qname != domain.as_ref()
+		if let Some(record) = self.qname.strip_suffix(&suffix)
 		{
-			return LookupType::WrongDomain(self.qname.clone());
-		}
+			trace!("[queryparameters][type_for_domain][{}][{}] is correct domain", self.qname(), self.qtype());
 
-		if self.qname.starts_with("_acme-challenge.")
-		{
-			// hierarchy does not match
-			if num_dots != domain_dots + 2
+			if let Some(record) = record.strip_prefix("_acme-challenge.")
 			{
-				return LookupType::SendSoa(self.qname.to_string())
-			}
+				trace!("[queryparameters][type_for_domain][{}][{}] is acme-challenge", self.qname(), self.qtype());
 
-			let parts = self.qname.split('.').collect::<Vec<_>>();
-			let iscontainer = parts.get(1).unwrap().parse::<ContainerName>().is_ok();
-			let containerdomain = parts.into_iter().skip(1).collect::<Vec<_>>().join(".");
-
-			// not asking for a container
-			if !iscontainer || self.qtype == "SOA"
-			{
-				return LookupType::Unknown
+				if let Ok(container) = record.parse::<ContainerName>()
 				{
-					domain: self.qname.clone(),
-					qtype: self.qtype.clone(),
-				};
-			}
+					trace!("[queryparameters][type_for_domain][{}][{}] is acme for valid container", self.qname(), self.qtype());
 
-			return LookupType::SendAcme
-			{
-				soa: false,
-				domain: containerdomain,
-			}
-		}
+					if self.qtype().eq("SOA")
+					{
+						debug!("[queryparameters][type_for_domain][{}][{}] is soa on acme domain for valid container", self.qname(), self.qtype());
 
-		// handle valid-ish AAAA
-		if (self.qtype == "AAAA" || self.qtype == "ANY") && num_dots == domain_dots + 1
-		{
-			// does it look like a container?
-			if let Ok(name) = self.qname.split('.').next().unwrap().parse::<ContainerName>()
-			{
-				// needs to be resolved
-				return LookupType::SendAaaa
+						LookupType::Dumb
+						{
+							response: DumbResponse::Nxdomain,
+						}
+					}
+					else
+					{
+						debug!("[queryparameters][type_for_domain][{}][{}] is non-soa on acme domain for valid container", self.qname(), self.qtype());
+
+						LookupType::Dumb
+						{
+							response: DumbResponse::Acme
+							{
+								target: format!("{}.{}", container.as_ref(), domain.as_ref())
+							},
+						}
+					}
+				}
+				else
 				{
-					soa: self.qtype == "ANY",
-					domain: self.qname.clone(),
-					container: name,
+					debug!("[queryparameters][type_for_domain][{}][{}] is acme for invalid container", self.qname(), self.qtype());
+
+					LookupType::Dumb
+					{
+						response: DumbResponse::Nxdomain,
+					}
 				}
 			}
 			else
 			{
-				return LookupType::SendSoa(self.qname.clone())
+				trace!("[queryparameters][type_for_domain][{}][{}] is not acme", self.qname(), self.qtype());
+
+				if let Ok(container) = record.parse::<ContainerName>()
+				{
+					trace!("[queryparameters][type_for_domain][{}][{}] is valid container", self.qname(), self.qtype());
+
+					if self.qtype().eq("ANY") || self.qtype().eq("AAAA")
+					{
+						debug!("[queryparameters][type_for_domain][{}][{}] is aaaa-ish container", self.qname(), self.qtype());
+
+						LookupType::Smart
+						{
+							container: container,
+							response: SmartResponse::Aaaa
+							{
+								soa: self.qtype().eq("ANY"),
+							},
+						}
+					}
+					else
+					{
+						debug!("[queryparameters][type_for_domain][{}][{}] is not aaaa-ish", self.qname(), self.qtype());
+
+						LookupType::Dumb
+						{
+							response: DumbResponse::Soa,
+						}
+					}
+				}
+				else
+				{
+					debug!("[queryparameters][type_for_domain][{}][{}] is not a valid container", self.qname(), self.qtype());
+
+					LookupType::Dumb
+					{
+						response: DumbResponse::Nxdomain,
+					}
+				}
 			}
 		}
-
-		// anything that requires SOA
-		if self.qtype == "SOA" || self.qtype == "ANY"
+		else
 		{
-			return LookupType::SendSoa(self.qname.clone());
+			if self.qname.eq(domain.as_ref())
+			{
+				debug!("[queryparameters][type_for_domain][{}][{}] is exactly our domain", self.qname(), self.qtype());
+
+				LookupType::Dumb
+				{
+					response: DumbResponse::Soa,
+				}
+			}
+			else
+			{
+				debug!("[queryparameters][type_for_domain][{}][{}] is not our domain", self.qname(), self.qtype());
+
+				LookupType::Dumb
+				{
+					response: DumbResponse::Nxdomain,
+				}
+			}
 		}
-
-		// everything else is strange
-		return LookupType::Unknown
-		{
-			domain: self.qname.clone(),
-			qtype: self.qtype.clone(),
-		};
 	}
 }
 
