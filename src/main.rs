@@ -172,11 +172,109 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	let instant = Instant::now();
 
 	// maybe switch to reqwest some day?
+
+	trace!("[local_query][{}] getting instance list", name.as_ref());
+	// first get the list of instances
 	let output = Command::new("sudo")
 		.arg("lxc")
 		.arg("query")
 		.arg("--")
-		.arg(format!("/1.0/instances/{}/state", name.as_ref()))
+		.arg("/1.0/instances")
+		.stdin(Stdio::null())
+		.stdout(Stdio::piped())
+		.stderr(Stdio::piped())
+		.output()
+		.await
+		.chain_err(|| ErrorKind::LocalExecution(None))?;
+
+	debug!("[local_query][{}] instance listing ran for {:.3}s", name.as_ref(), instant.elapsed().as_secs_f64());
+
+	trace!("[local_query][{}] validating instance list command output", name.as_ref());
+	if !output.status.success()
+	{
+		if &output.stderr == b"Error: not found\n"
+		{
+			trace!("local query got \"not found\" for {}",name.as_ref());
+			return Ok(None);
+		}
+		let err = String::from_utf8_lossy(&output.stderr);
+		bail!(ErrorKind::LocalExecution(Some(err.to_string())))
+	}
+
+	trace!("[local_query][{}] parsing instance list", name.as_ref());
+	let instances: Vec<String> = serde_json::from_slice(&output.stdout).chain_err(|| ErrorKind::LocalOutput)?;
+
+	trace!("[local_query][{}] validating and filtering instance list", name.as_ref());
+	let instances = instances.into_iter()
+		.filter_map(|instance|
+		{
+			let instance = match instance.strip_prefix("/1.0/instances/")
+			{
+				Some(instance) => instance,
+				None => return None,
+			};
+
+			if name.as_ref().eq(instance)
+			{
+				trace!("[local_query][{}] exact match", name.as_ref());
+				Some((true,instance.to_string()))
+			}
+			else
+			{
+				if let Some(remainder) = instance.strip_prefix(name.as_ref())
+				{
+					if !remainder.contains(|ch: char| !ch.is_ascii_digit())
+					{
+						trace!("[local_query][{}] prefix match: {}", name.as_ref(), instance);
+						Some((false,instance.to_string()))
+					}
+					else
+					{
+						trace!("[local_query][{}] prefix does not match: {}", name.as_ref(), instance);
+						None
+					}
+				}
+				else
+				{
+					trace!("[local_query][{}] no match", name.as_ref());
+					None
+				}
+			}
+		})
+		.collect::<Vec<_>>()
+	;
+
+	// this assumes that all matches are either exact or there is only one local instance matching
+	// in all cases there will only be one query
+	let instance = if let Some((_,instance)) = instances.iter().find(|(exact,_)| *exact)
+	{
+		Some(instance)
+	}
+	else
+	{
+		instances.get(0).map(|(_,instance)| instance)
+	};
+
+	let instance = match instance
+	{
+		Some(instance) =>
+		{
+			debug!("[local_query][{}] match: {}", name.as_ref(), instance);
+			instance
+		}
+		None =>
+		{
+			debug!("[local_query][{}] not found", name.as_ref());
+			return Ok(None);
+		}
+	};
+	
+
+	let output = Command::new("sudo")
+		.arg("lxc")
+		.arg("query")
+		.arg("--")
+		.arg(format!("/1.0/instances/{}/state", instance))
 		.stdin(Stdio::null())
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped())
@@ -190,7 +288,7 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	{
 		if &output.stderr == b"Error: not found\n"
 		{
-			trace!("local query got \"not found\" for {}",name.as_ref());
+			trace!("local query got \"not found\" for {}", name.as_ref());
 			return Ok(None);
 		}
 		let err = String::from_utf8_lossy(&output.stderr);
@@ -202,7 +300,7 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 
 	if state.status() != "Running"
 	{
-		trace!("local query got says {} is not running",name.as_ref());
+		trace!("local query got says {} is not running", name.as_ref());
 		return Ok(None);
 	}
 
