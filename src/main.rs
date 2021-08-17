@@ -144,15 +144,17 @@ async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<
 	).await?;
 	trace!("query for {} published the message", name.as_ref());
 
-	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(Duration::from_millis(5000)).await
+	let mut result = None;
+
+	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(Duration::from_millis(1000)).await
 	{
 		if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
 		{
 			if let Ok(addresses) = delivery.data.chunks(16)
-				.map(|v| Ok(u128::from_le_bytes(v.to_vec().try_into()?).into()))
+				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
 				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
 			{
-				return Ok(Some(addresses));
+				result.get_or_insert_with(|| Vec::new()).extend(addresses);
 			}
 		}
 		else
@@ -160,7 +162,7 @@ async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<
 			debug!("silently dropping message without either correlation_id or reply_to");
 		}
 	}
-	Ok(None)
+	Ok(result)
 }
 
 async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
