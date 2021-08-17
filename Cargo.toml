@@ -1,6 +1,6 @@
 [package]
 name = "lxddns"
-version = "2.2.0"
+version = "2.2.1"
 authors = ["benaryorg <binary@benary.org>"]
 edition = "2018"
 
