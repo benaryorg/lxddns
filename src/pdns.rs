@@ -123,6 +123,19 @@ impl DumbResponse
 	}
 }
 
+/// PowerDNS request structure.
+///
+/// A request for records by PowerDNS.
+/// This struct contains the logic of when to send which record, although it works in tandem with [`DumbResponse`] and [`SmartResponse`].
+///
+/// Moving this into its own structure, while providing some level of maintainability mainly allows for proper unit testing.
+/// The unit testing done for this struct however also tests [`DumbResponse`] and [`SmartResponse`] at the same time.
+///
+/// # Tests
+///
+/// ```
+/// assert!(true);
+/// ```
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
 pub struct QueryParameters
 {
