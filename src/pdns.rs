@@ -517,6 +517,7 @@ impl ResponseEntry
 			content: format!("{} {} 1 86400 7200 3600000 3600", domain.as_ref(), hostmaster.as_ref()),
 			qtype: "SOA".to_string(),
 			qname: domain.as_ref().to_string(),
+			// FIXME: this ttl needs to be configurable
 			ttl: 256,
 		}
 	}
@@ -539,6 +540,7 @@ impl ResponseEntry
 			content: format!("{}", addr),
 			qtype: "AAAA".to_string(),
 			qname: domain.as_ref().to_string(),
+			// FIXME: this ttl needs to be configurable
 			ttl: 16,
 		}
 	}

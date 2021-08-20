@@ -135,10 +135,12 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 
 	let mut result = None;
 
-	let timeout = Duration::from_millis(1500);
-	let start = Instant::now();
+	// FIXME: this timeout needs to be configurable
+	//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
+	let timeout = Duration::from_millis(300);
+	let instant = Instant::now();
 
-	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(start.elapsed())).await
+	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
 	{
 		trace!("[remote_query][{}][{}] got response", name.as_ref(), correlation_id);
 
@@ -148,7 +150,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
 				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
 			{
-				trace!("[remote_query][{}][{}] got response: {:?}", name.as_ref(), correlation_id, addresses);
+				debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
 				result.get_or_insert_with(|| Vec::new()).extend(addresses);
 			}
 			else
