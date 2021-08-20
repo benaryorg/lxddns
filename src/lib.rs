@@ -135,7 +135,10 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 
 	let mut result = None;
 
-	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(Duration::from_millis(1000)).await
+	let timeout = Duration::from_millis(1500);
+	let start = Instant::now();
+
+	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(start.elapsed())).await
 	{
 		trace!("[remote_query][{}][{}] got response", name.as_ref(), correlation_id);
 
