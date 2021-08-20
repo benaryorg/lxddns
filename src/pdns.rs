@@ -10,6 +10,7 @@ use super::
 	debug,
 };
 
+#[derive(Clone,Eq,PartialEq,Hash,Debug)]
 pub enum LookupType
 {
 	Smart
@@ -23,13 +24,10 @@ pub enum LookupType
 	},
 }
 
+#[derive(Clone,Eq,PartialEq,Hash,Debug)]
 pub enum SmartResponse
 {
-	Aaaa
-	{
-		soa: bool,
-	},
-	Soa,
+	Aaaa,
 }
 
 impl SmartResponse
@@ -40,24 +38,7 @@ impl SmartResponse
 
 		match self
 		{
-			SmartResponse::Soa =>
-			{
-				trace!("[smartresponse][{}][soa] checking addresses", qname.as_ref());
-
-				if addresses.is_some()
-				{
-					debug!("[smartresponse][{}][soa] adding soa", qname.as_ref());
-
-					vec![soa.clone()].into()
-				}
-				else
-				{
-					debug!("[smartresponse][{}][soa] sending nxdomain", qname.as_ref());
-
-					DumbResponse::Nxdomain.response(qname, soa)
-				}
-			},
-			SmartResponse::Aaaa { soa: send_soa, } =>
+			SmartResponse::Aaaa =>
 			{
 				trace!("[smartresponse][{}][aaaa] checking addresses", qname.as_ref());
 
@@ -65,28 +46,22 @@ impl SmartResponse
 				{
 					trace!("[smartresponse][{}][aaaa] has addresses, building response", qname.as_ref());
 
-					let mut vec = addresses.into_iter()
+					addresses.into_iter()
 						.map(|addr| ResponseEntry::aaaa(qname.as_ref().clone(), addr))
-						.collect::<Vec<_>>();
-
-					if send_soa
-					{
-						trace!("[smartresponse][{}][aaaa] adding soa", qname.as_ref());
-						vec.push(soa.clone());
-					}
-
-					vec.into()
+						.collect::<Vec<_>>()
+						.into()
 				}
 				else
 				{
 					trace!("[smartresponse][{}][aaaa] sending nxdomain", qname.as_ref());
-					DumbResponse::Nxdomain.response(qname, soa)
+					DumbResponse::Soa.response(qname, soa)
 				}
 			},
 		}
 	}
 }
 
+#[derive(Clone,Eq,PartialEq,Hash,Debug)]
 pub enum DumbResponse
 {
 	Acme
@@ -133,8 +108,262 @@ impl DumbResponse
 ///
 /// # Tests
 ///
+/// ## Base Domain
+///
+/// The base domain needs to resolve to a SOA entry.
+///
 /// ```
-/// assert!(true);
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "example.com",
+///     "qtype": "SOA",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     response: DumbResponse::Soa,
+/// });
+/// ```
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "example.com",
+///     "qtype": "ANY",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     response: DumbResponse::Soa,
+/// });
+/// ```
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "example.com",
+///     "qtype": "AAAA",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     response: DumbResponse::Soa,
+/// });
+/// ```
+///
+/// ## Container
+///
+/// Existing containers need to respond to AAAA and ANY with a AAAA when they exist, *NXDOMAIN* if they do not exist.
+/// You'd expect them to also respond to SOA on SOA, but that would be a mistake as PowerDNS does not expect the backend to do anything of sorts.
+/// PowerDNS magically figures out the SOA (and which domains exist and which don't) by querying the backend with multiple queries.
+/// So from here on out, as the root zone is already established, everything that you'd expect to be SOA is actually *NXDOMAIN*.
+/// For further information there is a [nice mailinglist thread on this matter](https://mailman.powerdns.com/pipermail/pdns-users/2019-February/025809.html).
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "container.example.com",
+///     "qtype": "SOA",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     //response: DumbResponse::Soa, NOSOA
+///     response: DumbResponse::Nxdomain,
+/// });
+/// ```
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "container.example.com",
+///     "qtype": "ANY",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Smart
+/// {
+///     container: "container".parse().unwrap(),
+///     response: SmartResponse::Aaaa,
+/// });
+/// ```
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "container.example.com",
+///     "qtype": "AAAA",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Smart
+/// {
+///     container: "container".parse().unwrap(),
+///     response: SmartResponse::Aaaa,
+/// });
+/// ```
+///
+/// ## ACME Domains
+/// 
+/// ACME Domains respond with NS entries on all requests.
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "_acme-challenge.container.example.com",
+///     "qtype": "SOA",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     response: DumbResponse::Acme
+///     {
+///         target: "container.example.com".to_string(),
+///     },
+/// });
+/// ```
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "_acme-challenge.container.example.com",
+///     "qtype": "ANY",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     response: DumbResponse::Acme
+///     {
+///         target: "container.example.com".to_string(),
+///     },
+/// });
+/// ```
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// let response = from_value::<QueryParameters>(json!(
+/// {
+///     "qname": "_acme-challenge.container.example.com",
+///     "qtype": "AAAA",
+///     "zone_id": 0,
+/// })).unwrap().type_for_domain("example.com");
+///
+/// assert_eq!(response, LookupType::Dumb
+/// {
+///     response: DumbResponse::Acme
+///     {
+///         target: "container.example.com".to_string(),
+///     },
+/// });
+/// ```
+///
+/// ## Different Domain
+///
+/// Unrelated domains should be *REFUSED*, but for now we send *NXDOMAIN*.
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// for qname in
+///     [ "example.org"
+///     , "container.example.org"
+///     , "_container.example.org"
+///     , "_acme-challenge.container.example.org"
+///     , "_acme-challenge._container.example.org"
+///     ]
+/// {
+///     for qtype in
+///         [ "SOA"
+///         , "ANY"
+///         , "AAAA"
+///         ]
+///     {
+///         let response = from_value::<QueryParameters>(json!(
+///         {
+///             "qname": qname,
+///             "qtype": qtype,
+///             "zone_id": 0,
+///         })).unwrap().type_for_domain("example.com");
+///
+///         assert_eq!(response, LookupType::Dumb
+///         {
+///             response: DumbResponse::Nxdomain,
+///             //response: DumbResponse::Refused,
+///         }, "wrong response for {} ({})", qname, qtype);
+///     }
+/// }
+/// ```
+///
+/// ## Wrong Domains
+///
+/// Domains which do not exist, like invalid container names or non-existent subdomains, should return SOA.
+///
+/// ```
+/// # use lxddns::pdns::*;
+/// # use lxddns::lxd::*;
+/// # use serde_json::{from_value, json};
+/// for qname in
+///     [ "_container.example.com"
+///     , "_acme-challenge._container.example.com"
+///     , "fictional.container.example.com"
+///     , "fictional._container.example.com"
+///     , "fictional._acme-challenge.container.example.com"
+///     , "fictional._acme-challenge._container.example.com"
+///     ]
+/// {
+///     for qtype in
+///         [ "SOA"
+///         , "ANY"
+///         , "AAAA"
+///         ]
+///     {
+///         let response = from_value::<QueryParameters>(json!(
+///         {
+///             "qname": qname,
+///             "qtype": qtype,
+///             "zone_id": 0,
+///         })).unwrap().type_for_domain("example.com");
+///
+///         assert_eq!(response, LookupType::Dumb
+///         {
+///             //response: DumbResponse::Soa, NOSOA
+///             response: DumbResponse::Nxdomain,
+///         }, "wrong response for {} ({})", qname, qtype);
+///     }
+/// }
 /// ```
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
 pub struct QueryParameters
@@ -167,28 +396,14 @@ impl QueryParameters
 
 				if let Ok(container) = record.parse::<ContainerName>()
 				{
-					trace!("[queryparameters][type_for_domain][{}][{}] is acme for valid container", self.qname(), self.qtype());
+					debug!("[queryparameters][type_for_domain][{}][{}] is acme for valid container", self.qname(), self.qtype());
 
-					if self.qtype().eq("SOA")
+					LookupType::Dumb
 					{
-						debug!("[queryparameters][type_for_domain][{}][{}] is soa on acme domain for valid container", self.qname(), self.qtype());
-
-						LookupType::Dumb
+						response: DumbResponse::Acme
 						{
-							response: DumbResponse::Nxdomain,
-						}
-					}
-					else
-					{
-						debug!("[queryparameters][type_for_domain][{}][{}] is non-soa on acme domain for valid container", self.qname(), self.qtype());
-
-						LookupType::Dumb
-						{
-							response: DumbResponse::Acme
-							{
-								target: format!("{}.{}", container.as_ref(), domain.as_ref())
-							},
-						}
+							target: format!("{}.{}", container.as_ref(), domain.as_ref())
+						},
 					}
 				}
 				else
@@ -217,9 +432,6 @@ impl QueryParameters
 						{
 							container: container,
 							response: SmartResponse::Aaaa
-							{
-								soa: self.qtype().eq("ANY"),
-							},
 						}
 					}
 					else
@@ -228,7 +440,7 @@ impl QueryParameters
 
 						LookupType::Dumb
 						{
-							response: DumbResponse::Soa,
+							response: DumbResponse::Nxdomain,
 						}
 					}
 				}
@@ -305,7 +517,7 @@ impl ResponseEntry
 			content: format!("{} {} 1 86400 7200 3600000 3600", domain.as_ref(), hostmaster.as_ref()),
 			qtype: "SOA".to_string(),
 			qname: domain.as_ref().to_string(),
-			ttl: 512,
+			ttl: 256,
 		}
 	}
 
