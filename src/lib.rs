@@ -163,6 +163,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 			debug!("[remote_query][{}][{}] missing reply_to or correlation_id", name.as_ref(), correlation_id);
 		}
 	}
+
 	Ok(result)
 }
 
@@ -437,7 +438,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 				trace!("[unixserver] parsing request");
 				match serde_json::from_slice::<Query>(&input)
 				{
-					Ok(Query::Lookup { parameters: query, }) => 
+					Ok(Query::Lookup { parameters: query, }) =>
 					{
 						debug!("[unixserver][{}] type {}", query.qname(), query.qtype());
 
@@ -465,7 +466,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 													break;
 												}
 											},
-											Err(err) => 
+											Err(err) =>
 											{
 												warn!("[unixserver][{}] closing unix stream due to json error: {}", query.qname(), err);
 												break;
@@ -495,7 +496,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 											break;
 										}
 									},
-									Err(err) => 
+									Err(err) =>
 									{
 										warn!("[unixserver][{}] closing unix stream due to json error: {}", query.qname(), err);
 										break;
