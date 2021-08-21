@@ -116,7 +116,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 		"",
 		BasicConsumeOptions
 		{
-			no_ack: false,
+			no_ack: true,
 			no_local: true,
 			..Default::default()
 		},
@@ -337,7 +337,7 @@ pub async fn responder(channel: Channel) -> Result<()>
 		"",
 		BasicConsumeOptions
 		{
-			no_ack: false,
+			no_ack: true,
 			no_local: true,
 			..Default::default()
 		},
