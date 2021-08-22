@@ -100,9 +100,9 @@ async fn main() -> !
 			Err(err) =>
 			{
 				error!("[main] fatal error occured: {}", err);
-				for err in err.chain()
+				for err in err.chain().skip(1)
 				{
-					error!("[main] caused by: {}", err);
+					error!("[main]  caused by: {}", err);
 				}
 				error!("[main] restarting all services");
 			},

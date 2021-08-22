@@ -387,6 +387,10 @@ pub async fn responder(channel: Channel) -> Result<()>
 			Err(err) =>
 			{
 				warn!("[responder][{}] query error: {}", name.as_ref(), err);
+				for err in err.chain().skip(1)
+				{
+					warn!("[responder][{}]  caused by: {}", name.as_ref(), err);
+				}
 				continue;
 			},
 		};
