@@ -12,27 +12,27 @@ use super::
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
 pub struct CpuState
 {
-	usage: u128,
+	usage: i128,
 }
 
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
 pub struct DiskState
 {
 	#[get = "pub"]
-	usage: u128,
+	usage: i128,
 }
 
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
 pub struct MemoryState
 {
 	#[get = "pub"]
-	swap_usage: u128,
+	swap_usage: i128,
 	#[get = "pub"]
-	swap_usage_peak: u128,
+	swap_usage_peak: i128,
 	#[get = "pub"]
-	usage: u128,
+	usage: i128,
 	#[get = "pub"]
-	usage_peak: u128,
+	usage_peak: i128,
 }
 
 #[derive(Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
@@ -72,13 +72,13 @@ pub struct Address
 pub struct NetCounters
 {
 	#[get = "pub"]
-	bytes_received: u128,
+	bytes_received: i128,
 	#[get = "pub"]
-	bytes_sent: u128,
+	bytes_sent: i128,
 	#[get = "pub"]
-	packets_received: u128,
+	packets_received: i128,
 	#[get = "pub"]
-	packets_sent: u128,
+	packets_sent: i128,
 }
 
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]
@@ -93,7 +93,7 @@ pub struct NetState
 	#[get = "pub"]
 	hwaddr: String,
 	#[get = "pub"]
-	mtu: usize,
+	mtu: isize,
 	#[get = "pub"]
 	state: String,
 	// too lazy to find a workaround
@@ -104,14 +104,14 @@ pub struct NetState
 pub struct ContainerState
 {
 	#[get = "pub"]
-	pid: usize,
+	pid: isize,
 	#[get = "pub"]
-	processes: usize,
+	processes: isize,
 	// probably breaks if enum
 	#[get = "pub"]
 	status: String,
 	#[get = "pub"]
-	status_code: usize,
+	status_code: isize,
 	#[get = "pub"]
 	cpu: CpuState,
 	#[get = "pub"]
