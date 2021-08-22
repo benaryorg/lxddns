@@ -1,15 +1,15 @@
 pub(crate) use ::
 {
-    thiserror::
-    {
-        Error,
-    },
-    anyhow::
-    {
-        bail,
-        Context,
-        Result,
-    },
+	thiserror::
+	{
+		Error,
+	},
+	anyhow::
+	{
+		bail,
+		Context,
+		Result,
+	},
 };
 
 #[derive(Error,Debug)]
@@ -32,12 +32,12 @@ pub enum Error
 	#[error("unix server closed gracefully")]
 	UnixServerClosed,
 	#[error("local command output is unparsable")]
-    LocalOutput,
-    #[error("local resolution via command execution failed with `{0:?}`")]
-    LocalExecution(Option<String>),
-    #[error("domain name is not safe for resolution: '{0}'")]
-    UnsafeName(String),
-    #[error("message queue channel was considered tainted after an error")]
-    MessageQueueChannelTaint,
+	LocalOutput,
+	#[error("local resolution via command execution failed with `{0:?}`")]
+	LocalExecution(Option<String>),
+	#[error("domain name is not safe for resolution: '{0}'")]
+	UnsafeName(String),
+	#[error("message queue channel was considered tainted after an error")]
+	MessageQueueChannelTaint,
 }
 

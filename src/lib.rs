@@ -4,7 +4,7 @@ pub mod pdns;
 
 use crate::
 {
-    error::*,
+	error::*,
 	lxd::
 	{
 		AddressFamily,
