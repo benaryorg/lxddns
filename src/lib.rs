@@ -100,7 +100,7 @@ use ::
 pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
 	debug!("[remote_query][{}] starting query", name.as_ref());
-	channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
+
 	let queue = channel.queue_declare(
 		"",
 		QueueDeclareOptions
