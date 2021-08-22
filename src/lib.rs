@@ -110,7 +110,8 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 			..QueueDeclareOptions::default()
 		},
 		Default::default()
-	).await?;
+	).await.with_context(|| "error in queue_declare")?;
+
 	let mut consumer = channel.basic_consume(queue.name().as_str(),
 		"",
 		BasicConsumeOptions
@@ -120,7 +121,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 			..Default::default()
 		},
 		Default::default()
-	).await?;
+	).await.with_context(|| "error in basic_consume")?;
 
 	let correlation_id = format!("{}", Uuid::new_v4());
 	trace!("[remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
@@ -129,7 +130,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 		AMQPProperties::default()
 			.with_correlation_id(correlation_id.clone().into())
 			.with_reply_to(queue.name().clone())
-	).await?;
+	).await.with_context(|| "error in basic_publish")?;
 	trace!("[remote_query][{}][{}] published message", name.as_ref(), correlation_id);
 
 	let mut result = None;
