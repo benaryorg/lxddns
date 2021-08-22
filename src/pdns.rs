@@ -227,7 +227,7 @@ impl DumbResponse
 ///
 /// ## ACME Domains
 /// 
-/// ACME Domains respond with NS entries on all requests.
+/// ACME Domains respond with NS entries on all requests except for SOA which are *NXDOMAIN*, otherwise PowerDNS fails.
 ///
 /// ```
 /// # use lxddns::pdns::*;
@@ -242,10 +242,7 @@ impl DumbResponse
 ///
 /// assert_eq!(response, LookupType::Dumb
 /// {
-///     response: DumbResponse::Acme
-///     {
-///         target: "container.example.com".to_string(),
-///     },
+///     response: DumbResponse::Nxdomain,
 /// });
 /// ```
 ///
@@ -396,14 +393,28 @@ impl QueryParameters
 
 				if let Ok(container) = record.parse::<ContainerName>()
 				{
-					debug!("[queryparameters][type_for_domain][{}][{}] is acme for valid container", self.qname(), self.qtype());
+					trace!("[queryparameters][type_for_domain][{}][{}] is acme for valid container", self.qname(), self.qtype());
 
-					LookupType::Dumb
+					if self.qtype.eq("SOA")
 					{
-						response: DumbResponse::Acme
+						debug!("[queryparameters][type_for_domain][{}][{}] omitting soa on acme for valid container", self.qname(), self.qtype());
+
+						LookupType::Dumb
 						{
-							target: format!("{}.{}", container.as_ref(), domain.as_ref())
-						},
+							response: DumbResponse::Nxdomain,
+						}
+					}
+					else
+					{
+						debug!("[queryparameters][type_for_domain][{}][{}] using NS on acme for valid container", self.qname(), self.qtype());
+
+						LookupType::Dumb
+						{
+							response: DumbResponse::Acme
+							{
+								target: format!("{}.{}", container.as_ref(), domain.as_ref())
+							},
+						}
 					}
 				}
 				else
