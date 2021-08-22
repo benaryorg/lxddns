@@ -1,63 +1,43 @@
-use ::error_chain::error_chain;
-
-error_chain!
+pub(crate) use ::
 {
-	links
-	{
-	}
+    thiserror::
+    {
+        Error,
+    },
+    anyhow::
+    {
+        bail,
+        Context,
+        Result,
+    },
+};
 
-	foreign_links
-	{
-		CommandLineParsing(::clap::Error);
-		Io(::std::io::Error);
-		NumberParsing(::std::num::ParseIntError);
-		Lapin(::lapin::Error);
-	}
-
-	errors
-	{
-		ResponderError(error: Box<Error>)
-		{
-			description("rpc responder failed")
-			display("the rpc responder failed with an error: {}", error)
-		}
-		ResponderClosed
-		{
-			description("rpc responder closed")
-			display("the unix domain server closed gracefully")
-		}
-		UnixServerError(error: Box<Error>)
-		{
-			description("unix server failed")
-			display("the unix domain server failed with an error: {}", error)
-		}
-		UnixServerClosed
-		{
-			description("unix server closed")
-			display("the unix domain server closed gracefully")
-		}
-		LocalOutput
-		{
-			description("local command output unparsable")
-			display("local command produced output that could not be parsed")
-		}
-		LocalExecution(error: Option<String>)
-		{
-			description("command execution failed")
-			display("local resolution via command execution failed {}",
-				error.clone().map(|err| format!("with: '{}'",err)).unwrap_or_else(|| "without error".to_string())
-			)
-		}
-		UnsafeName(name: String)
-		{
-			description("unsafe domain name used")
-			display("domain name is not safe for resolution: '{}'", name)
-		}
-		MessageQueueChannelTaint
-		{
-			description("error due to channel taint")
-			display("message queue channel was considered tainted after an error")
-		}
-	}
+#[derive(Error,Debug)]
+pub enum Error
+{
+	#[error("command line parsing failure")]
+	CommandLineParsing(#[from] ::clap::Error),
+	#[error("general io error")]
+	Io(#[from] ::std::io::Error),
+	#[error("number parsing error")]
+	NumberParsing(#[from] ::std::num::ParseIntError),
+	#[error("lapin (AMQP) error")]
+	Lapin(#[from] ::lapin::Error),
+	#[error("responder failed with error")]
+	ResponderError,
+	#[error("responder closed gracefully")]
+	ResponderClosed,
+	#[error("unix server failed with error")]
+	UnixServerError,
+	#[error("unix server closed gracefully")]
+	UnixServerClosed,
+	#[error("local command output is unparsable")]
+    LocalOutput,
+    #[error("local resolution via command execution failed with `{0:?}`")]
+    LocalExecution(Option<String>),
+    #[error("domain name is not safe for resolution: '{0}'")]
+    UnsafeName(String),
+    #[error("message queue channel was considered tainted after an error")]
+    MessageQueueChannelTaint,
 }
 

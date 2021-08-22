@@ -1,3 +1,6 @@
+#[allow(unused)]
+use crate::error::*;
+
 use super::
 {
 	Deserialize,

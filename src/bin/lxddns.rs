@@ -100,7 +100,7 @@ async fn main() -> !
 			Err(err) =>
 			{
 				error!("[main] fatal error occured: {}", err);
-				for err in err.iter()
+				for err in err.chain()
 				{
 					error!("[main] caused by: {}", err);
 				}

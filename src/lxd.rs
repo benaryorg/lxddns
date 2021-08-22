@@ -1,12 +1,11 @@
+use crate::error::*;
+
 use super::
 {
 	Deserialize,
-	Error,
-	ErrorKind,
 	FromStr,
 	Getters,
 	HashMap,
-	Result,
 	static_regex,
 };
 
@@ -140,13 +139,13 @@ impl AsRef<str> for ContainerName
 
 impl FromStr for ContainerName
 {
-	type Err = Error;
+	type Err = crate::error::Error;
 
-	fn from_str(name: &str) -> Result<Self>
+	fn from_str(name: &str) -> std::result::Result<Self,Self::Err>
 	{
 		if !static_regex!(r"\A[-a-z0-9]+\z").is_match(&name)
 		{
-			Err(ErrorKind::UnsafeName(name.to_string()).into())
+			Err(Error::UnsafeName(name.to_string()).into())
 		}
 		else
 		{

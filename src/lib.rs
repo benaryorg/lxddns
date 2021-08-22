@@ -2,9 +2,9 @@ pub mod error;
 pub mod lxd;
 pub mod pdns;
 
-use self::
+use crate::
 {
-	error::*,
+    error::*,
 	lxd::
 	{
 		AddressFamily,
@@ -52,7 +52,6 @@ use ::
 		future,
 	},
 	regex_static::static_regex,
-	error_chain::*,
 	serde::
 	{
 		Deserialize,
@@ -187,7 +186,7 @@ pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 		.stderr(Stdio::piped())
 		.output()
 		.await
-		.chain_err(|| ErrorKind::LocalExecution(None))?;
+		.context(Error::LocalExecution(None))?;
 
 	debug!("[local_query][{}] instance listing ran for {:.3}s", name.as_ref(), instant.elapsed().as_secs_f64());
 
@@ -195,11 +194,11 @@ pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	if !output.status.success()
 	{
 		let err = String::from_utf8_lossy(&output.stderr);
-		bail!(ErrorKind::LocalExecution(Some(err.to_string())))
+		bail!(Error::LocalExecution(Some(err.to_string())))
 	}
 
 	trace!("[local_query][{}] parsing instance list", name.as_ref());
-	let instances: Vec<String> = serde_json::from_slice(&output.stdout).chain_err(|| ErrorKind::LocalOutput)?;
+	let instances: Vec<String> = serde_json::from_slice(&output.stdout).context(Error::LocalOutput)?;
 
 	trace!("[local_query][{}] validating and filtering instance list", name.as_ref());
 	let instances = instances.into_iter()
@@ -277,7 +276,7 @@ pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 		.stderr(Stdio::piped())
 		.output()
 		.await
-		.chain_err(|| ErrorKind::LocalExecution(None))?;
+		.context(Error::LocalExecution(None))?;
 
 	debug!("[local_query][{}] query ran for {:.3}s", name.as_ref(), instant.elapsed().as_secs_f64());
 
@@ -289,11 +288,11 @@ pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 			return Ok(None);
 		}
 		let err = String::from_utf8_lossy(&output.stderr);
-		bail!(ErrorKind::LocalExecution(Some(err.to_string())))
+		bail!(Error::LocalExecution(Some(err.to_string())))
 	}
 
 	trace!("[local_query][{}] got response", name.as_ref());
-	let state: ContainerState = serde_json::from_slice(&output.stdout).chain_err(|| ErrorKind::LocalOutput)?;
+	let state: ContainerState = serde_json::from_slice(&output.stdout).context(Error::LocalOutput)?;
 
 	if state.status() != "Running"
 	{
@@ -407,7 +406,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 {
 	let soa_record = &ResponseEntry::soa(&domain, &hostmaster);
 
-	listener.incoming().map(|res| res.map_err(|err| ErrorKind::UnixServerError(Box::new(err.into())))).try_for_each_concurrent(10, |stream|
+	listener.incoming().map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(10, |stream|
 	{
 		debug!("[unixserver] connection opened");
 		let mut writer = stream;
@@ -419,7 +418,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 		trace!("[unix_server] starting async task");
 		async move
 		{
-			let channel = channel.await.chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
+			let channel = channel.await.context(Error::MessageQueueChannelTaint)?;
 			trace!("[unixserver] async task running");
 			let mut lines = reader.split(b'\n');
 			while let Some(input) = lines.next().await
@@ -476,7 +475,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 									Err(err) =>
 									{
 										error!("[unixserver][{}] resolve error, assuming taint: {}", query.qname(), err);
-										Err(err).chain_err(|| ErrorKind::MessageQueueChannelTaint)?;
+										Err(err).context(Error::MessageQueueChannelTaint)?;
 									},
 								}
 							},
@@ -536,7 +535,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 	Ok(())
 }
 
-pub async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S, domain: S, hostmaster: S) -> Result<()> // use never when available
+pub async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S, domain: S, hostmaster: S) -> Result<()>
 {
 	let domain = domain.as_ref().to_string();
 	let hostmaster = hostmaster.as_ref().to_string();
@@ -558,10 +557,10 @@ pub async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S, domain: S, h
 	info!("[run] running");
 	match future::select(unixserver,responder).await
 	{
-		future::Either::Left((Ok(()), _)) => Err(ErrorKind::UnixServerClosed.into()),
-		future::Either::Left((Err(err), _)) => Err(ErrorKind::UnixServerError(Box::new(err)).into()),
-		future::Either::Right((Ok(()), _)) => Err(ErrorKind::ResponderClosed.into()),
-		future::Either::Right((Err(err), _)) => Err(ErrorKind::ResponderError(Box::new(err)).into()),
+		future::Either::Left((Ok(()), _)) => Err(Error::UnixServerClosed.into()),
+		future::Either::Left((Err(err), _)) => Err(err).context(Error::UnixServerError),
+		future::Either::Right((Ok(()), _)) => Err(Error::ResponderClosed.into()),
+		future::Either::Right((Err(err), _)) => Err(err).context(Error::ResponderError),
 	}
 }
 
