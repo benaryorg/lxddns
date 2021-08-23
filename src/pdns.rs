@@ -50,7 +50,7 @@ impl SmartResponse
 					trace!("[smartresponse][{}][aaaa] has addresses, building response", qname.as_ref());
 
 					addresses.into_iter()
-						.map(|addr| ResponseEntry::aaaa(qname.as_ref().clone(), addr))
+						.map(|addr| ResponseEntry::aaaa(qname.as_ref(), addr))
 						.collect::<Vec<_>>()
 						.into()
 				}

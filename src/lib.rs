@@ -151,7 +151,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
 			{
 				debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
-				result.get_or_insert_with(|| Vec::new()).extend(addresses);
+				result.get_or_insert_with(Vec::new).extend(addresses);
 			}
 			else
 			{
@@ -458,7 +458,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 									{
 										debug!("[unixserver][{}] got {:?}", query.qname(), result);
 
-										let response = response.response(query.qname(), &soa_record, result);
+										let response = response.response(query.qname(), soa_record, result);
 
 										match serde_json::to_string(&response)
 										{
@@ -488,7 +488,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 							{
 								debug!("[unixserver][{}] dumb response", query.qname());
 
-								let response = response.response(query.qname(), &soa_record);
+								let response = response.response(query.qname(), soa_record);
 
 								match serde_json::to_string(&response)
 								{

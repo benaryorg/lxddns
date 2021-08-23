@@ -143,9 +143,9 @@ impl FromStr for ContainerName
 
 	fn from_str(name: &str) -> std::result::Result<Self,Self::Err>
 	{
-		if !static_regex!(r"\A[-a-z0-9]+\z").is_match(&name)
+		if !static_regex!(r"\A[-a-z0-9]+\z").is_match(name)
 		{
-			Err(Error::UnsafeName(name.to_string()).into())
+			Err(Error::UnsafeName(name.to_string()))
 		}
 		else
 		{
