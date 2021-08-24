@@ -137,7 +137,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 
 	// FIXME: this timeout needs to be configurable
 	//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
-	let timeout = Duration::from_millis(300);
+	let timeout = Duration::from_millis(600);
 	let instant = Instant::now();
 
 	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
@@ -334,7 +334,7 @@ pub async fn responder(channel: Channel) -> Result<()>
 	trace!("[responder] bound exchange to queue");
 
 	// Start a consumer.
-	let mut consumer = channel.basic_consume(queue.name().as_str(),
+	let consumer = channel.basic_consume(queue.name().as_str(),
 		"",
 		BasicConsumeOptions
 		{
@@ -346,63 +346,72 @@ pub async fn responder(channel: Channel) -> Result<()>
 	).await?;
 	info!("[responder] running");
 
-	while let Some(Ok((_,delivery))) = consumer.next().await
+	consumer.try_for_each_concurrent(10, |query|
 	{
-		debug!("[responder] received message");
-		let name = String::from_utf8_lossy(&delivery.data);
-		debug!("[responder][{}] received request", name);
+		let channel = channel.clone();
 
-		let name = match name.parse::<ContainerName>()
+		async move
 		{
-			Ok(ok) => ok,
-			Err(_) =>
-			{
-				info!("[responder][{}] invalid name", name);
-				continue;
-			},
-		};
+			let (_,delivery) = query;
 
-		let (reply_to, corr_id) = match (delivery.properties.reply_to(),delivery.properties.correlation_id())
-		{
-			(Some(reply_to),Some(corr_id)) => (reply_to,corr_id),
-			_ =>
-			{
-				info!("[responder][{}] message without reply_to or correlation_id; acking and ignoring", name.as_ref());
-				continue;
-			}
-		};
+			debug!("[responder] received message");
+			let name = String::from_utf8_lossy(&delivery.data);
+			debug!("[responder][{}] received request", name);
 
-		let addresses = match local_query(&name).await
-		{
-			Ok(Some(addresses)) =>
+			let name = match name.parse::<ContainerName>()
 			{
-				trace!("[responder][{}] got {:?}", name.as_ref(), addresses);
-
-				addresses
-			},
-			Ok(_) =>
-			{
-				trace!("[responder][{}] no info, skipping", name.as_ref());
-				continue;
-			},
-			Err(err) =>
-			{
-				warn!("[responder][{}] query error: {}", name.as_ref(), err);
-				for err in err.chain().skip(1)
+				Ok(ok) => ok,
+				Err(_) =>
 				{
-					warn!("[responder][{}]  caused by: {}", name.as_ref(), err);
-				}
-				continue;
-			},
-		};
-		let response = addresses.into_iter().flat_map(|addr| u128::from(addr).to_le_bytes().to_vec()).collect::<Vec<u8>>();
+					info!("[responder][{}] invalid name", name);
+					return Ok(());
+				},
+			};
 
-		channel.basic_publish("",reply_to.as_str(),Default::default(),response,
-			AMQPProperties::default()
-				.with_correlation_id(corr_id.clone())
-		).await?;
-		trace!("[responder][{}] message published", name.as_ref());
-	}
+			let (reply_to, corr_id) = match (delivery.properties.reply_to(),delivery.properties.correlation_id())
+			{
+				(Some(reply_to),Some(corr_id)) => (reply_to,corr_id),
+				_ =>
+				{
+					info!("[responder][{}] message without reply_to or correlation_id; ignoring", name.as_ref());
+					return Ok(());
+				}
+			};
+
+			let addresses = match local_query(&name).await
+			{
+				Ok(Some(addresses)) =>
+				{
+					trace!("[responder][{}] got {:?}", name.as_ref(), addresses);
+
+					addresses
+				},
+				Ok(_) =>
+				{
+					trace!("[responder][{}] no info, skipping", name.as_ref());
+					return Ok(());
+				},
+				Err(err) =>
+				{
+					warn!("[responder][{}] query error: {}", name.as_ref(), err);
+					for err in err.chain().skip(1)
+					{
+						warn!("[responder][{}]  caused by: {}", name.as_ref(), err);
+					}
+					return Ok(());
+				},
+			};
+			let response = addresses.into_iter().flat_map(|addr| u128::from(addr).to_le_bytes().to_vec()).collect::<Vec<u8>>();
+
+			channel.basic_publish("",reply_to.as_str(),Default::default(),response,
+				AMQPProperties::default()
+					.with_correlation_id(corr_id.clone())
+			).await?;
+			trace!("[responder][{}] message published", name.as_ref());
+
+			Ok(())
+		}
+	}).await?;
 
 	Ok(())
 }
@@ -452,7 +461,12 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 							{
 								debug!("[unixserver][{}] smart response, querying {}", query.qname(), container.as_ref());
 
-								match remote_query(&channel,&container).await
+								let instant = Instant::now();
+								let result = remote_query(&channel,&container).timeout(Duration::from_millis(1500)).await;
+
+								debug!("[unixserver][{}] remote_query ran for {:.3}s (timeout: {})", query.qname(), instant.elapsed().as_secs_f64(), result.is_err());
+
+								match result.ok().unwrap_or(Ok(None))
 								{
 									Ok(result) =>
 									{
@@ -519,7 +533,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 					},
 					Ok(Query::Unknown) =>
 					{
-						debug!("[unixserver] unknown method: {:?}", String::from_utf8_lossy(&input));
+						debug!("[unixserver] unknown query: {:?}", String::from_utf8_lossy(&input));
 						if let Err(err) = writeln!(writer, "{}", json!({ "result": false }).to_string()).await
 						{
 							warn!("[unixserver] closing unix stream due to socket error: {}", err);
