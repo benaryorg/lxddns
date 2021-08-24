@@ -57,7 +57,7 @@ impl SmartResponse
 				else
 				{
 					trace!("[smartresponse][{}][aaaa] sending nxdomain", qname.as_ref());
-					DumbResponse::Soa.response(qname, soa)
+					DumbResponse::Nxdomain.response(qname, soa)
 				}
 			},
 		}
