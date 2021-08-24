@@ -24,7 +24,7 @@ Mostly because both `pdns ALL=(ALL) NOPASSWD: /usr/bin/lxc query -- *` and clien
 This doesn't actually need to be a cluster but I'd highly recommend it.
 My cluster is running spread across all host-nodes and each *lxddns* just asks *localhost*.
 
-Now grab an authorative [*PowerDNS*](https://www.powerdns.com/) server and configure it to ask the Unix Domain Socket provided by *lxddns* (`remote-connection-string=unix:path=[…]` and `launch=remote`).
+Now grab an authorative [*PowerDNS*](https://www.powerdns.com/) server and configure it to ask the Unix Domain Socket provided by *lxddns* (`remote-connection-string=unix:path=[…],timeout=5000` and `launch=remote`).
 
 Start *lxddns* with appropriate arguments (see `--help`).
 

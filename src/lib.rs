@@ -137,15 +137,18 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 
 	// FIXME: this timeout needs to be configurable
 	//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
-	let timeout = Duration::from_millis(600);
+	let mut timeout = Duration::from_millis(1000);
+	let extension = Duration::from_millis(250);
 	let instant = Instant::now();
 
 	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
 	{
-		trace!("[remote_query][{}][{}] got response", name.as_ref(), correlation_id);
-
 		if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
 		{
+			let elapsed = instant.elapsed();
+			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
+			timeout = elapsed + (elapsed + 2*extension)/2;
+
 			if let Ok(addresses) = delivery.data.chunks(16)
 				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
 				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
@@ -160,7 +163,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 		}
 		else
 		{
-			debug!("[remote_query][{}][{}] missing reply_to or correlation_id", name.as_ref(), correlation_id);
+			debug!("[remote_query][{}][{}] unrelated message received", name.as_ref(), correlation_id);
 		}
 	}
 
@@ -462,7 +465,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 								debug!("[unixserver][{}] smart response, querying {}", query.qname(), container.as_ref());
 
 								let instant = Instant::now();
-								let result = remote_query(&channel,&container).timeout(Duration::from_millis(1500)).await;
+								let result = remote_query(&channel,&container).timeout(Duration::from_millis(4500)).await;
 
 								debug!("[unixserver][{}] remote_query ran for {:.3}s (timeout: {})", query.qname(), instant.elapsed().as_secs_f64(), result.is_err());
 
