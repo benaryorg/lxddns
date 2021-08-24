@@ -81,7 +81,11 @@ async fn main() -> !
 		std::env::set_var("RUST_LOG", loglevel);
 	}
 
-	env_logger::init();
+	env_logger::Builder::new()
+		.parse_default_env()
+		.format_timestamp(Some(env_logger::TimestampPrecision::Millis))
+		.init();
+
 	info!("[main] logging initialised");
 
 	let url = matches.value_of("url").unwrap();
