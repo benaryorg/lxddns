@@ -29,8 +29,10 @@ use ::
 		Channel,
 		options::
 		{
-			QueueDeclareOptions,
+			BasicAckOptions,
 			BasicConsumeOptions,
+			BasicRejectOptions,
+			QueueDeclareOptions,
 		},
 		protocol::basic::AMQPProperties,
 	},
@@ -116,7 +118,7 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 		"",
 		BasicConsumeOptions
 		{
-			no_ack: true,
+			no_ack: false,
 			no_local: true,
 			..Default::default()
 		},
@@ -155,15 +157,27 @@ pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Opt
 			{
 				debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
 				result.get_or_insert_with(Vec::new).extend(addresses);
+				delivery.acker.ack(BasicAckOptions
+				{
+					multiple: false,
+				}).await?;
 			}
 			else
 			{
-				debug!("[remote_query][{}][{}] invalid content", name.as_ref(), correlation_id);
+				debug!("[remote_query][{}][{}] invalid content; rejecting", name.as_ref(), correlation_id);
+				delivery.acker.reject(BasicRejectOptions
+				{
+					requeue: false,
+				}).await?;
 			}
 		}
 		else
 		{
 			debug!("[remote_query][{}][{}] unrelated message received", name.as_ref(), correlation_id);
+			delivery.acker.reject(BasicRejectOptions
+			{
+				requeue: true,
+			}).await?;
 		}
 	}
 
@@ -341,7 +355,7 @@ pub async fn responder(channel: Channel) -> Result<()>
 		"",
 		BasicConsumeOptions
 		{
-			no_ack: true,
+			no_ack: false,
 			no_local: true,
 			..Default::default()
 		},
@@ -351,7 +365,7 @@ pub async fn responder(channel: Channel) -> Result<()>
 
 	consumer.try_for_each_concurrent(10, |query|
 	{
-		let channel = channel.clone();
+		let channel = &channel;
 
 		async move
 		{
@@ -366,7 +380,11 @@ pub async fn responder(channel: Channel) -> Result<()>
 				Ok(ok) => ok,
 				Err(_) =>
 				{
-					info!("[responder][{}] invalid name", name);
+					info!("[responder][{}] invalid name; rejecting", name);
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: false,
+					}).await?;
 					return Ok(());
 				},
 			};
@@ -376,7 +394,11 @@ pub async fn responder(channel: Channel) -> Result<()>
 				(Some(reply_to),Some(corr_id)) => (reply_to,corr_id),
 				_ =>
 				{
-					info!("[responder][{}] message without reply_to or correlation_id; ignoring", name.as_ref());
+					info!("[responder][{}] message without reply_to or correlation_id; rejecting", name.as_ref());
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: false,
+					}).await?;
 					return Ok(());
 				}
 			};
@@ -391,7 +413,11 @@ pub async fn responder(channel: Channel) -> Result<()>
 				},
 				Ok(_) =>
 				{
-					trace!("[responder][{}] no info, skipping", name.as_ref());
+					trace!("[responder][{}] no info; rejecting", name.as_ref());
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: false,
+					}).await?;
 					return Ok(());
 				},
 				Err(err) =>
@@ -401,6 +427,10 @@ pub async fn responder(channel: Channel) -> Result<()>
 					{
 						warn!("[responder][{}]  caused by: {}", name.as_ref(), err);
 					}
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: true,
+					}).await?;
 					return Ok(());
 				},
 			};
@@ -411,6 +441,10 @@ pub async fn responder(channel: Channel) -> Result<()>
 					.with_correlation_id(corr_id.clone())
 			).await?;
 			trace!("[responder][{}] message published", name.as_ref());
+			delivery.acker.ack(BasicAckOptions
+			{
+				multiple: false,
+			}).await?;
 
 			Ok(())
 		}
