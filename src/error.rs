@@ -43,5 +43,7 @@ pub enum Error
 	InvalidConfiguration,
 	#[error("connection to message queue failed")]
 	QueueConnectionError,
+	#[error("connection to message queue failed")]
+	AcknowledgementError,
 }
 

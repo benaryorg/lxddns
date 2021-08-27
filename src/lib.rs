@@ -383,7 +383,9 @@ impl Server
 
 	async fn responder(self: Arc<Self>) -> Result<()>
 	{
-		let channel = self.connection.create_channel().await.context(Error::QueueConnectionError)?;
+		let me = Arc::new(self);
+
+		let channel = me.connection.create_channel().await.context(Error::QueueConnectionError)?;
 
 		channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
 		trace!("[responder] created fanout exchange");
@@ -416,9 +418,9 @@ impl Server
 		).await?;
 		info!("[responder] running");
 
-		consumer.try_for_each_concurrent(10, |query|
+		consumer.err_into::<anyhow::Error>().try_for_each_concurrent(10, |query|
 		{
-			let channel = &channel;
+			let me = me.clone();
 
 			async move
 			{
@@ -427,6 +429,9 @@ impl Server
 				debug!("[responder] received message");
 				let name = String::from_utf8_lossy(&delivery.data);
 				debug!("[responder][{}] received request", name);
+
+				let channel = me.connection.create_channel().await.context(Error::QueueConnectionError)?;
+				debug!("[responder][{}] channel created", name);
 
 				let name = match name.parse::<ContainerName>()
 				{
@@ -437,7 +442,7 @@ impl Server
 						delivery.acker.reject(BasicRejectOptions
 						{
 							requeue: false,
-						}).await?;
+						}).await.context(Error::AcknowledgementError)?;
 						return Ok(());
 					},
 				};
@@ -451,7 +456,7 @@ impl Server
 						delivery.acker.reject(BasicRejectOptions
 						{
 							requeue: false,
-						}).await?;
+						}).await.context(Error::AcknowledgementError)?;
 						return Ok(());
 					}
 				};
@@ -470,7 +475,7 @@ impl Server
 						delivery.acker.reject(BasicRejectOptions
 						{
 							requeue: false,
-						}).await?;
+						}).await.context(Error::AcknowledgementError)?;
 						return Ok(());
 					},
 					Err(err) =>
@@ -483,7 +488,7 @@ impl Server
 						delivery.acker.reject(BasicRejectOptions
 						{
 							requeue: true,
-						}).await?;
+						}).await.context(Error::AcknowledgementError)?;
 						return Ok(());
 					},
 				};
@@ -492,16 +497,17 @@ impl Server
 				channel.basic_publish("",reply_to.as_str(),Default::default(),response,
 					AMQPProperties::default()
 						.with_correlation_id(corr_id.clone())
-				).await?;
+				).await.context("basic_publish")?;
 				trace!("[responder][{}] message published", name.as_ref());
+
 				delivery.acker.ack(BasicAckOptions
 				{
 					multiple: false,
-				}).await?;
+				}).await.context(Error::AcknowledgementError)?;
 
 				Ok(())
 			}
-		}).await?;
+		}).await.context("responder loop error")?;
 
 		Ok(())
 	}
