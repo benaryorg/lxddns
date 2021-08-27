@@ -91,6 +91,8 @@ use ::
 			Instant,
 		},
 		str::FromStr,
+		path::PathBuf,
+		sync::Arc,
 		collections::
 		{
 			HashMap,
@@ -453,7 +455,7 @@ pub async fn responder(channel: Channel) -> Result<()>
 	Ok(())
 }
 
-pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixListener, domain: S, hostmaster: S) -> Result<()>
+pub async fn unixserver<S: AsRef<str>>(channel: Channel, listener: UnixListener, domain: S, hostmaster: S) -> Result<()>
 {
 	let soa_record = &ResponseEntry::soa(&domain, &hostmaster);
 
@@ -461,7 +463,7 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 	{
 		debug!("[unixserver] connection opened");
 		let mut writer = stream;
-		let channel = connection.create_channel();
+		let channel = channel.clone();
 		let reader = BufReader::new(writer.clone());
 
 		let domain = domain.as_ref().to_string();
@@ -469,7 +471,6 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 		trace!("[unix_server] starting async task");
 		async move
 		{
-			let channel = channel.await.context(Error::MessageQueueChannelTaint)?;
 			trace!("[unixserver] async task running");
 			let mut lines = reader.split(b'\n');
 			while let Some(input) = lines.next().await
@@ -591,32 +592,118 @@ pub async fn unixserver<S: AsRef<str>>(connection: Connection, listener: UnixLis
 	Ok(())
 }
 
-pub async fn run<S: AsRef<str>,P: AsRef<Path>>(unixpath: P, url: S, domain: S, hostmaster: S) -> Result<()>
+pub struct Server
 {
-	let domain = domain.as_ref().to_string();
-	let hostmaster = hostmaster.as_ref().to_string();
+	unixpath: PathBuf,
+	domain: String,
+	hostmaster: String,
+	connection: Connection,
+}
 
-	let connection = Connection::connect(url.as_ref(),Default::default()).await?;
-	info!("[run] connection to message queue established");
-
-	let channel = connection.create_channel().await?;
-	debug!("[run] channel created");
-	let responder = task::spawn_local(async move { responder(channel).await });
-	info!("[run] responder spawned");
-
-	let listener = UnixListener::bind(unixpath.as_ref()).await?;
-	info!("[run] unix socket opened");
-
-	let unixserver = task::spawn_local(async move { unixserver(connection,listener,domain,hostmaster).await });
-	info!("[run] unixserver started");
-
-	info!("[run] running");
-	match future::select(unixserver,responder).await
+impl Server
+{
+	pub fn builder() -> ServerBuilder
 	{
-		future::Either::Left((Ok(()), _)) => Err(Error::UnixServerClosed.into()),
-		future::Either::Left((Err(err), _)) => Err(err).context(Error::UnixServerError),
-		future::Either::Right((Ok(()), _)) => Err(Error::ResponderClosed.into()),
-		future::Either::Right((Err(err), _)) => Err(err).context(Error::ResponderError),
+		Default::default()
+	}
+
+	pub async fn run(self) -> Result<()>
+	{
+		let me = Arc::new(self);
+
+		let (responder, responder_abort) = future::abortable(task::spawn_local(me.clone().responder()));
+		info!("[server][run] responder spawned");
+
+		let listener = UnixListener::bind(me.unixpath.as_path()).await?;
+		info!("[server][run] unix socket opened");
+
+		let (unixserver, unixserver_abort) = future::abortable(task::spawn_local(me.clone().unixserver(listener)));
+		info!("[server][run] unixserver started");
+
+		info!("[server][run] running");
+		match future::select(unixserver, responder).await
+		{
+			future::Either::Left((Ok(res), responder)) =>
+			{
+				responder_abort.abort();
+				let _ = responder.await;
+				let _ = res.context(Error::UnixServerError)?;
+				bail!(Error::UnixServerClosed);
+			},
+			future::Either::Right((Ok(res), unixserver)) =>
+			{
+				unixserver_abort.abort();
+				let _ = unixserver.await;
+				let _ = res.context(Error::ResponderError)?;
+				bail!(Error::ResponderClosed);
+			},
+			_ => unreachable!(),
+		}
+	}
+
+	async fn responder(self: Arc<Self>) -> Result<()>
+	{
+		responder(self.connection.create_channel().await.context(Error::QueueConnectionError)?).await
+	}
+
+	async fn unixserver(self: Arc<Self>, listener: UnixListener) -> Result<()>
+	{
+		unixserver(self.connection.create_channel().await.context(Error::QueueConnectionError)?, listener, &self.domain, &self.hostmaster).await
+	}
+}
+
+#[derive(Clone,Eq,PartialEq,Hash,Debug,Default)]
+pub struct ServerBuilder
+{
+	unixpath: Option<PathBuf>,
+	url: Option<String>,
+	domain: Option<String>,
+	hostmaster: Option<String>,
+}
+
+impl ServerBuilder
+{
+	pub fn unixpath<P: AsRef<Path>>(mut self, path: P) -> Self
+	{
+		self.unixpath = Some(path.as_ref().into());
+		return self;
+	}
+
+	pub fn url<S: AsRef<str>>(mut self, url: S) -> Self
+	{
+		self.url = Some(url.as_ref().into());
+		return self;
+	}
+
+	pub fn domain<S: AsRef<str>>(mut self, domain: S) -> Self
+	{
+		self.domain = Some(domain.as_ref().into());
+		return self;
+	}
+
+	pub fn hostmaster<S: AsRef<str>>(mut self, hostmaster: S) -> Self
+	{
+		self.hostmaster = Some(hostmaster.as_ref().into());
+		return self;
+	}
+
+	pub async fn run(self) -> Result<()>
+	{
+		let unixpath = self.unixpath.map(Result::Ok).unwrap_or_else(|| bail!("no unixpath provided")).context(Error::InvalidConfiguration)?;
+		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
+		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
+		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
+
+		let connection = Connection::connect(url.as_ref(), Default::default())
+			.await
+			.context("connect failed")
+			.context(Error::QueueConnectionError)
+		?;
+		info!("[server][run] connection to message queue established");
+
+		let server = Server { unixpath, domain, hostmaster, connection, };
+
+		server.run().await
 	}
 }
 

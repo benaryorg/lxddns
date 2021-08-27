@@ -39,5 +39,9 @@ pub enum Error
 	UnsafeName(String),
 	#[error("message queue channel was considered tainted after an error")]
 	MessageQueueChannelTaint,
+	#[error("invalid provided configuration")]
+	InvalidConfiguration,
+	#[error("connection to message queue failed")]
+	QueueConnectionError,
 }
 

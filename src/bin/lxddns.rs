@@ -1,7 +1,7 @@
 #[rustfmt::skip]
 use ::
 {
-	lxddns::run,
+	lxddns::Server,
 	std::time::Duration,
 	async_std::
 	{
@@ -26,7 +26,7 @@ use ::
 };
 
 #[async_std::main]
-async fn main() -> !
+async fn main()
 {
 	let matches = app_from_crate!()
         .arg(Arg::with_name("url")
@@ -88,28 +88,28 @@ async fn main() -> !
 
 	info!("[main] logging initialised");
 
-	let url = matches.value_of("url").unwrap();
-	let domain = matches.value_of("domain").unwrap();
-	let hostmaster = matches.value_of("hostmaster").unwrap();
-	let unixpath = Path::new(matches.value_of("socket").unwrap());
+	let server = Server::builder()
+		.url(matches.value_of("url").unwrap())
+		.domain(matches.value_of("domain").unwrap())
+		.hostmaster(matches.value_of("hostmaster").unwrap())
+		.unixpath(Path::new(matches.value_of("socket").unwrap()))
+	;
 
-	loop
+	info!("[main] running server");
+	match server.run().await
 	{
-		info!("[main] running all services");
-		match run(&unixpath, &url, &domain, &hostmaster).await
+		Ok(_) => unreachable!(),
+		Err(err) =>
 		{
-			Ok(_) => unreachable!(),
-			Err(err) =>
+			error!("[main] fatal error occured: {}", err);
+			for err in err.chain().skip(1)
 			{
-				error!("[main] fatal error occured: {}", err);
-				for err in err.chain().skip(1)
-				{
-					error!("[main]  caused by: {}", err);
-				}
-				error!("[main] restarting all services");
-			},
-		}
-		let _ = remove_file(&unixpath).await;
-		task::sleep(Duration::from_secs(1)).await;
+				error!("[main]  caused by: {}", err);
+			}
+			error!("[main] restarting all services");
+		},
 	}
+	let _ = remove_file(matches.value_of("socket").unwrap()).await;
+	task::sleep(Duration::from_secs(1)).await;
 }
+
