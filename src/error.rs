@@ -37,8 +37,8 @@ pub enum Error
 	LocalExecution(Option<String>),
 	#[error("domain name is not safe for resolution: '{0}'")]
 	UnsafeName(String),
-	#[error("message queue channel was considered tainted after an error")]
-	MessageQueueChannelTaint,
+	#[error("message queue was considered tainted after an error")]
+	MessageQueueTaint,
 	#[error("invalid provided configuration")]
 	InvalidConfiguration,
 	#[error("connection to message queue failed")]

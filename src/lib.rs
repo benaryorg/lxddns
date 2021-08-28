@@ -503,11 +503,8 @@ impl Server
 										},
 										Err(err) =>
 										{
-											warn!("[unixserver][{}] resolve error: {}", query.qname(), err);
-											for err in err.chain().skip(1)
-											{
-												warn!("[unixserver][{}]  caused by: {}", query.qname(), err);
-											}
+											warn!("[unixserver][{}] resolve error, assuming taint: {}", query.qname(), err);
+											Err(err).context(Error::MessageQueueTaint)?;
 										},
 									}
 								},
