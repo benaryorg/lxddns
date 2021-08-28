@@ -653,6 +653,7 @@ pub struct ServerBuilder
 	url: Option<String>,
 	domain: Option<String>,
 	hostmaster: Option<String>,
+	queuename: Option<String>,
 }
 
 impl ServerBuilder
@@ -681,12 +682,19 @@ impl ServerBuilder
 		return self;
 	}
 
+	pub fn queuename<S: AsRef<str>>(mut self, queuename: S) -> Self
+	{
+		self.queuename = Some(queuename.as_ref().into());
+		return self;
+	}
+
 	pub async fn run(self) -> Result<()>
 	{
 		let unixpath = self.unixpath.map(Result::Ok).unwrap_or_else(|| bail!("no unixpath provided")).context(Error::InvalidConfiguration)?;
 		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
 		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
 		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
+		let queuename = self.queuename.unwrap_or_else(|| "".to_string());
 
 		let connection = Connection::connect(url.as_ref(), Default::default())
 			.await
@@ -696,7 +704,7 @@ impl ServerBuilder
 
 		let channel = connection.create_channel().await?;
 		let response_queue = channel.queue_declare(
-			"",
+			&queuename,
 			QueueDeclareOptions
 			{
 				exclusive: false,

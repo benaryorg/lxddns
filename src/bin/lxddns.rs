@@ -74,6 +74,15 @@ async fn main()
             .default_value("/var/run/lxddns/lxddns.sock")
             .multiple(false)
 		)
+		.arg(Arg::with_name("queuename")
+            .short("q")
+            .long("queuename")
+            .help("name of queue to be used for query responses; empty string is randomly assigned queue name")
+            .takes_value(true)
+            .value_name("QUEUE_NAME")
+            .default_value("")
+            .multiple(false)
+		)
 		.get_matches();
 
 	if let Some(loglevel) = matches.value_of("loglevel")
@@ -93,6 +102,7 @@ async fn main()
 		.domain(matches.value_of("domain").unwrap())
 		.hostmaster(matches.value_of("hostmaster").unwrap())
 		.unixpath(Path::new(matches.value_of("socket").unwrap()))
+		.queuename(matches.value_of("queuename").unwrap())
 	;
 
 	info!("[main] running server");
