@@ -26,7 +26,7 @@ use ::
 	{
 		Connection,
 		ExchangeKind,
-		Channel,
+		Queue,
 		options::
 		{
 			BasicAckOptions,
@@ -38,7 +38,6 @@ use ::
 	},
 	log::
 	{
-		error,
 		warn,
 		info,
 		debug,
@@ -100,91 +99,6 @@ use ::
 		net::Ipv6Addr,
 	},
 };
-
-pub async fn remote_query(channel: &Channel, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
-{
-	debug!("[remote_query][{}] starting query", name.as_ref());
-
-	let queue = channel.queue_declare(
-		"",
-		QueueDeclareOptions
-		{
-			exclusive: true,
-			auto_delete: true,
-			..QueueDeclareOptions::default()
-		},
-		Default::default()
-	).await.with_context(|| "error in queue_declare")?;
-
-	let mut consumer = channel.basic_consume(queue.name().as_str(),
-		"",
-		BasicConsumeOptions
-		{
-			no_ack: false,
-			no_local: true,
-			..Default::default()
-		},
-		Default::default()
-	).await.with_context(|| "error in basic_consume")?;
-
-	let correlation_id = format!("{}", Uuid::new_v4());
-	trace!("[remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
-
-	channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes().to_vec(),
-		AMQPProperties::default()
-			.with_correlation_id(correlation_id.clone().into())
-			.with_reply_to(queue.name().clone())
-	).await.with_context(|| "error in basic_publish")?;
-	trace!("[remote_query][{}][{}] published message", name.as_ref(), correlation_id);
-
-	let mut result = None;
-
-	// FIXME: this timeout needs to be configurable
-	//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
-	let mut timeout = Duration::from_millis(1000);
-	let extension = Duration::from_millis(250);
-	let instant = Instant::now();
-
-	while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
-	{
-		if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
-		{
-			let elapsed = instant.elapsed();
-			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
-			timeout = elapsed + (elapsed + 2*extension)/2;
-
-			if let Ok(addresses) = delivery.data.chunks(16)
-				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
-				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
-			{
-				debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
-				result.get_or_insert_with(Vec::new).extend(addresses);
-				delivery.acker.ack(BasicAckOptions
-				{
-					multiple: false,
-				}).await?;
-			}
-			else
-			{
-				debug!("[remote_query][{}][{}] invalid content; rejecting", name.as_ref(), correlation_id);
-				delivery.acker.reject(BasicRejectOptions
-				{
-					requeue: false,
-				}).await?;
-			}
-		}
-		else
-		{
-			debug!("[remote_query][{}][{}] unrelated message received", name.as_ref(), correlation_id);
-			delivery.acker.reject(BasicRejectOptions
-			{
-				requeue: true,
-			}).await?;
-		}
-	}
-
-	Ok(result)
-}
 
 pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
@@ -338,6 +252,7 @@ pub struct Server
 	domain: String,
 	hostmaster: String,
 	connection: Connection,
+	response_queue: Queue,
 }
 
 impl Server
@@ -529,9 +444,6 @@ impl Server
 			{
 				trace!("[unixserver] async task running");
 
-				let channel = me.connection.create_channel().await.context(Error::QueueConnectionError)?;
-				trace!("[unixserver] channel created");
-
 				let mut lines = reader.split(b'\n');
 				while let Some(input) = lines.next().await
 				{
@@ -560,7 +472,7 @@ impl Server
 									debug!("[unixserver][{}] smart response, querying {}", query.qname(), container.as_ref());
 
 									let instant = Instant::now();
-									let result = remote_query(&channel,&container).timeout(Duration::from_millis(4500)).await;
+									let result = me.clone().remote_query(&container).timeout(Duration::from_millis(4500)).await;
 
 									debug!("[unixserver][{}] remote_query ran for {:.3}s (timeout: {})", query.qname(), instant.elapsed().as_secs_f64(), result.is_err());
 
@@ -591,8 +503,11 @@ impl Server
 										},
 										Err(err) =>
 										{
-											error!("[unixserver][{}] resolve error, assuming taint: {}", query.qname(), err);
-											Err(err).context(Error::MessageQueueChannelTaint)?;
+											warn!("[unixserver][{}] resolve error: {}", query.qname(), err);
+											for err in err.chain().skip(1)
+											{
+												warn!("[unixserver][{}]  caused by: {}", query.qname(), err);
+											}
 										},
 									}
 								},
@@ -651,6 +566,84 @@ impl Server
 		}).await?;
 		Ok(())
 	}
+
+	async fn remote_query(self: Arc<Self>, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
+	{
+		let me = Arc::new(self);
+
+		debug!("[remote_query][{}] starting query", name.as_ref());
+
+		let channel = me.connection.create_channel().await?;
+
+		let mut consumer = channel.basic_consume(me.response_queue.name().as_str(),
+			"",
+			BasicConsumeOptions
+			{
+				no_ack: false,
+				no_local: true,
+				..Default::default()
+			},
+			Default::default()
+		).await.with_context(|| "error in basic_consume")?;
+
+		let correlation_id = format!("{}", Uuid::new_v4());
+		trace!("[remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
+
+		channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes().to_vec(),
+			AMQPProperties::default()
+				.with_correlation_id(correlation_id.clone().into())
+				.with_reply_to(me.response_queue.name().clone())
+		).await.with_context(|| "error in basic_publish")?;
+		trace!("[remote_query][{}][{}] published message", name.as_ref(), correlation_id);
+
+		let mut result = None;
+
+		// FIXME: this timeout needs to be configurable
+		//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
+		let mut timeout = Duration::from_millis(1000);
+		let extension = Duration::from_millis(250);
+		let instant = Instant::now();
+
+		while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
+		{
+			if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
+			{
+				let elapsed = instant.elapsed();
+				trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
+				timeout = elapsed + (elapsed + 2*extension)/2;
+
+				if let Ok(addresses) = delivery.data.chunks(16)
+					.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
+					.collect::<std::result::Result<Vec<_>,Vec<_>>>()
+				{
+					debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
+					result.get_or_insert_with(Vec::new).extend(addresses);
+					delivery.acker.ack(BasicAckOptions
+					{
+						multiple: false,
+					}).await?;
+				}
+				else
+				{
+					debug!("[remote_query][{}][{}] invalid content; rejecting", name.as_ref(), correlation_id);
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: false,
+					}).await?;
+				}
+			}
+			else
+			{
+				trace!("[remote_query][{}][{}] unrelated message received", name.as_ref(), correlation_id);
+				delivery.acker.reject(BasicRejectOptions
+				{
+					requeue: true,
+				}).await?;
+			}
+		}
+
+		Ok(result)
+	}
 }
 
 #[derive(Clone,Eq,PartialEq,Hash,Debug,Default)]
@@ -700,9 +693,22 @@ impl ServerBuilder
 			.context("connect failed")
 			.context(Error::QueueConnectionError)
 		?;
+
+		let channel = connection.create_channel().await?;
+		let response_queue = channel.queue_declare(
+			"",
+			QueueDeclareOptions
+			{
+				exclusive: false,
+				auto_delete: false,
+				..QueueDeclareOptions::default()
+			},
+			Default::default()
+		).await.with_context(|| "error in queue_declare")?;
+
 		info!("[server][run] connection to message queue established");
 
-		let server = Server { unixpath, domain, hostmaster, connection, };
+		let server = Server { unixpath, domain, hostmaster, connection, response_queue, };
 
 		server.run().await
 	}
