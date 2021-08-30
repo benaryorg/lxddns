@@ -45,5 +45,7 @@ pub enum Error
 	QueueConnectionError,
 	#[error("connection to message queue failed")]
 	AcknowledgementError,
+	#[error("correlation id was reused")]
+	DuplicateCorrelationId,
 }
 

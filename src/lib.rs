@@ -70,6 +70,7 @@ use ::
 		prelude::*,
 		task,
 		os::unix::net::UnixListener,
+		sync::Mutex,
 		io::
 		{
 			BufReader,
@@ -253,6 +254,7 @@ pub struct Server
 	hostmaster: String,
 	connection: Connection,
 	response_queue: Queue,
+	id_map: Mutex<HashMap<Uuid, Instant>>,
 }
 
 impl Server
@@ -583,12 +585,19 @@ impl Server
 			Default::default()
 		).await.with_context(|| "error in basic_consume")?;
 
-		let correlation_id = format!("{}", Uuid::new_v4());
+		let correlation_id = Uuid::new_v4();
 		trace!("[remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
+
+		{
+			let mut map = me.id_map.lock().await;
+			(!map.contains_key(&correlation_id)).then(|| ()).ok_or(Error::DuplicateCorrelationId)?;
+			map.insert(correlation_id.clone(), Instant::now());
+			map.retain(|_key, value| value.elapsed().as_secs() < 32);
+		}
 
 		channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes().to_vec(),
 			AMQPProperties::default()
-				.with_correlation_id(correlation_id.clone().into())
+				.with_correlation_id(format!("{}", correlation_id).into())
 				.with_reply_to(me.response_queue.name().clone())
 		).await.with_context(|| "error in basic_publish")?;
 		trace!("[remote_query][{}][{}] published message", name.as_ref(), correlation_id);
@@ -603,41 +612,82 @@ impl Server
 
 		while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
 		{
-			if delivery.properties.correlation_id().as_ref().map_or(false,|corr_id| corr_id.as_str().eq(&correlation_id))
+			let received_id = match delivery.properties.correlation_id()
 			{
-				let elapsed = instant.elapsed();
-				trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
-				timeout = elapsed + (elapsed + 2*extension)/2;
-
-				if let Ok(addresses) = delivery.data.chunks(16)
-					.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
-					.collect::<std::result::Result<Vec<_>,Vec<_>>>()
+				Some(received_id) => received_id,
+				None =>
 				{
-					debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
-					result.get_or_insert_with(Vec::new).extend(addresses);
-					delivery.acker.ack(BasicAckOptions
-					{
-						multiple: false,
-					}).await?;
-				}
-				else
-				{
-					debug!("[remote_query][{}][{}] invalid content; rejecting", name.as_ref(), correlation_id);
+					info!("[remote_query][{}][{}] response without correlation_id; rejecting", name.as_ref(), correlation_id);
 					delivery.acker.reject(BasicRejectOptions
 					{
 						requeue: false,
 					}).await?;
+					continue;
+				},
+			};
+
+			let received_id = match Uuid::parse_str(received_id.as_str())
+			{
+				Ok(received_id) => received_id,
+				Err(_) =>
+				{
+					info!("[remote_query][{}][{}] response with invalid correlation_id: {}; rejecting", name.as_ref(), correlation_id, received_id);
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: false,
+					}).await?;
+					continue;
+				},
+			};
+
+			if received_id.ne(&correlation_id)
+			{
+				if me.id_map.lock().await.get(&received_id).is_none()
+				{
+					trace!("[remote_query][{}][{}] fresh ({:.3}) unrelated message received; requeuing", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64());
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: true,
+					}).await?;
+					continue;
 				}
+				else
+				{
+					debug!("[remote_query][{}][{}] ancient unrelated message received; rejecting", name.as_ref(), correlation_id);
+					delivery.acker.reject(BasicRejectOptions
+					{
+						requeue: false,
+					}).await?;
+					continue;
+				}
+			}
+
+			let elapsed = instant.elapsed();
+			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
+			timeout = elapsed + (elapsed + 2*extension)/2;
+
+			if let Ok(addresses) = delivery.data.chunks(16)
+				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
+				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
+			{
+				debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
+				result.get_or_insert_with(Vec::new).extend(addresses);
+				delivery.acker.ack(BasicAckOptions
+				{
+					multiple: false,
+				}).await?;
 			}
 			else
 			{
-				trace!("[remote_query][{}][{}] unrelated message received", name.as_ref(), correlation_id);
+				debug!("[remote_query][{}][{}] invalid content; rejecting", name.as_ref(), correlation_id);
 				delivery.acker.reject(BasicRejectOptions
 				{
-					requeue: true,
+					requeue: false,
 				}).await?;
 			}
 		}
+
+		me.id_map.lock().await.remove(&correlation_id);
 
 		Ok(result)
 	}
@@ -713,7 +763,9 @@ impl ServerBuilder
 
 		info!("[server][run] connection to message queue established");
 
-		let server = Server { unixpath, domain, hostmaster, connection, response_queue, };
+		let id_map =  Default::default();
+
+		let server = Server { unixpath, domain, hostmaster, connection, response_queue, id_map, };
 
 		server.run().await
 	}
