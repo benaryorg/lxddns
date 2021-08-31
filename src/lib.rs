@@ -612,6 +612,9 @@ impl Server
 
 		while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
 		{
+			let elapsed = instant.elapsed();
+			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
+
 			let received_id = match delivery.properties.correlation_id()
 			{
 				Some(received_id) => received_id,
@@ -662,8 +665,6 @@ impl Server
 				}
 			}
 
-			let elapsed = instant.elapsed();
-			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
 			timeout = elapsed + (elapsed + 2*extension)/2;
 
 			if let Ok(addresses) = delivery.data.chunks(16)
