@@ -606,7 +606,7 @@ impl Server
 
 		// FIXME: this timeout needs to be configurable
 		//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
-		let mut timeout = Duration::from_millis(1000);
+		let mut timeout = Duration::from_millis(2000);
 		let extension = Duration::from_millis(250);
 		let instant = Instant::now();
 
