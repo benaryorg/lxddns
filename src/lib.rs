@@ -645,7 +645,7 @@ impl Server
 
 			if received_id.ne(&correlation_id)
 			{
-				if me.id_map.lock().await.get(&received_id).is_none()
+				if let Some(instant) = me.id_map.lock().await.get(&received_id)
 				{
 					trace!("[remote_query][{}][{}] fresh ({:.3}) unrelated message received; requeuing", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64());
 					delivery.acker.reject(BasicRejectOptions
