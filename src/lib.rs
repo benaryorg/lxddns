@@ -255,6 +255,8 @@ pub struct Server
 	connection: Connection,
 	response_queue: Queue,
 	id_map: Mutex<HashMap<Uuid, Instant>>,
+	responder_workers: usize,
+	unix_workers: usize,
 }
 
 impl Server
@@ -335,7 +337,7 @@ impl Server
 		).await?;
 		info!("[responder] running");
 
-		consumer.err_into::<anyhow::Error>().try_for_each_concurrent(10, |query|
+		consumer.err_into::<anyhow::Error>().try_for_each_concurrent(me.responder_workers, |query|
 		{
 			let me = me.clone();
 
@@ -433,7 +435,7 @@ impl Server
 	{
 		let soa_record = &ResponseEntry::soa(&self.domain, &self.hostmaster);
 
-		listener.incoming().map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(10, |stream|
+		listener.incoming().map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(self.unix_workers, |stream|
 		{
 			debug!("[unixserver] connection opened");
 			let mut writer = stream;
@@ -702,6 +704,9 @@ pub struct ServerBuilder
 	domain: Option<String>,
 	hostmaster: Option<String>,
 	queuename: Option<String>,
+	responder_workers: Option<usize>,
+	unix_workers: Option<usize>,
+
 }
 
 impl ServerBuilder
@@ -736,6 +741,18 @@ impl ServerBuilder
 		return self;
 	}
 
+	pub fn responder_workers<I: Into<usize>>(mut self, responder_workers: I) -> Self
+	{
+		self.responder_workers = Some(responder_workers.into());
+		return self;
+	}
+
+	pub fn unix_workers<I: Into<usize>>(mut self, unix_workers: I) -> Self
+	{
+		self.unix_workers = Some(unix_workers.into());
+		return self;
+	}
+
 	pub async fn run(self) -> Result<()>
 	{
 		let unixpath = self.unixpath.map(Result::Ok).unwrap_or_else(|| bail!("no unixpath provided")).context(Error::InvalidConfiguration)?;
@@ -743,6 +760,8 @@ impl ServerBuilder
 		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
 		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
 		let queuename = self.queuename.unwrap_or_else(|| "".to_string());
+		let responder_workers = self.responder_workers.unwrap_or_default();
+		let unix_workers = self.unix_workers.unwrap_or_default();
 
 		let connection = Connection::connect(url.as_ref(), Default::default())
 			.await
@@ -766,7 +785,17 @@ impl ServerBuilder
 
 		let id_map =  Default::default();
 
-		let server = Server { unixpath, domain, hostmaster, connection, response_queue, id_map, };
+		let server = Server
+		{
+			unixpath,
+			domain,
+			hostmaster,
+			connection,
+			response_queue,
+			id_map,
+			responder_workers,
+			unix_workers,
+		};
 
 		server.run().await
 	}
