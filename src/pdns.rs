@@ -444,7 +444,7 @@ impl QueryParameters
 
 						LookupType::Smart
 						{
-							container: container,
+							container,
 							response: SmartResponse::Aaaa
 						}
 					}

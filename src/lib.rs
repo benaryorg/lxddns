@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_else_if)]
+
 pub mod error;
 pub mod lxd;
 pub mod pdns;
@@ -539,7 +541,7 @@ impl Server
 						},
 						Ok(Query::Initialize) =>
 						{
-							if let Err(err) = writeln!(writer, "{}", json!({ "result": true }).to_string()).await
+							if let Err(err) = writeln!(writer, "{}", json!({ "result": true })).await
 							{
 								warn!("[unixserver] closing unix stream due to socket error: {}", err);
 								break;
@@ -548,7 +550,7 @@ impl Server
 						Ok(Query::Unknown) =>
 						{
 							debug!("[unixserver] unknown query: {:?}", String::from_utf8_lossy(&input));
-							if let Err(err) = writeln!(writer, "{}", json!({ "result": false }).to_string()).await
+							if let Err(err) = writeln!(writer, "{}", json!({ "result": false })).await
 							{
 								warn!("[unixserver] closing unix stream due to socket error: {}", err);
 								break;
@@ -714,43 +716,43 @@ impl ServerBuilder
 	pub fn unixpath<P: AsRef<Path>>(mut self, path: P) -> Self
 	{
 		self.unixpath = Some(path.as_ref().into());
-		return self;
+		self
 	}
 
 	pub fn url<S: AsRef<str>>(mut self, url: S) -> Self
 	{
 		self.url = Some(url.as_ref().into());
-		return self;
+		self
 	}
 
 	pub fn domain<S: AsRef<str>>(mut self, domain: S) -> Self
 	{
 		self.domain = Some(domain.as_ref().into());
-		return self;
+		self
 	}
 
 	pub fn hostmaster<S: AsRef<str>>(mut self, hostmaster: S) -> Self
 	{
 		self.hostmaster = Some(hostmaster.as_ref().into());
-		return self;
+		self
 	}
 
 	pub fn queuename<S: AsRef<str>>(mut self, queuename: S) -> Self
 	{
 		self.queuename = Some(queuename.as_ref().into());
-		return self;
+		self
 	}
 
 	pub fn responder_workers<I: Into<usize>>(mut self, responder_workers: I) -> Self
 	{
 		self.responder_workers = Some(responder_workers.into());
-		return self;
+		self
 	}
 
 	pub fn unix_workers<I: Into<usize>>(mut self, unix_workers: I) -> Self
 	{
 		self.unix_workers = Some(unix_workers.into());
-		return self;
+		self
 	}
 
 	pub async fn run(self) -> Result<()>
