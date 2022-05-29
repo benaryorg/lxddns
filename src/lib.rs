@@ -384,7 +384,7 @@ impl Server
 				{
 					Ok(Some(addresses)) =>
 					{
-						trace!("[responder][{}] got {:?}", name.as_ref(), addresses);
+						trace!("[responder][{}][{}] got {:?}", name.as_ref(), corr_id, addresses);
 
 						addresses
 					},
@@ -399,10 +399,10 @@ impl Server
 					},
 					Err(err) =>
 					{
-						warn!("[responder][{}] query error: {}", name.as_ref(), err);
+						warn!("[responder][{}][{}] query error: {}", name.as_ref(), corr_id, err);
 						for err in err.chain().skip(1)
 						{
-							warn!("[responder][{}]  caused by: {}", name.as_ref(), err);
+							warn!("[responder][{}][{}]  caused by: {}", name.as_ref(), corr_id, err);
 						}
 						delivery.acker.reject(BasicRejectOptions
 						{
@@ -417,7 +417,7 @@ impl Server
 					AMQPProperties::default()
 						.with_correlation_id(corr_id.clone())
 				).await.context("basic_publish")?;
-				trace!("[responder][{}] message published", name.as_ref());
+				trace!("[responder][{}][{}] message published to {}", name.as_ref(), corr_id, reply_to);
 
 				delivery.acker.ack(BasicAckOptions
 				{
@@ -649,7 +649,7 @@ impl Server
 			{
 				if let Some(instant) = me.id_map.lock().await.get(&received_id)
 				{
-					trace!("[remote_query][{}][{}] fresh ({:.3}) unrelated message received; requeuing", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64());
+					trace!("[remote_query][{}][{}] fresh ({:.3}) unrelated message received: {}; requeuing", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), received_id);
 					delivery.acker.reject(BasicRejectOptions
 					{
 						requeue: true,
