@@ -339,14 +339,12 @@ impl Server
 		).await?;
 		info!("[responder] running");
 
-		consumer.err_into::<anyhow::Error>().try_for_each_concurrent(me.responder_workers, |query|
+		consumer.err_into::<anyhow::Error>().try_for_each_concurrent(me.responder_workers, |delivery|
 		{
 			let me = me.clone();
 
 			async move
 			{
-				let (_,delivery) = query;
-
 				debug!("[responder] received message");
 				let name = String::from_utf8_lossy(&delivery.data);
 				debug!("[responder][{}] received request", name);
@@ -415,7 +413,7 @@ impl Server
 				};
 				let response = addresses.into_iter().flat_map(|addr| u128::from(addr).to_le_bytes().to_vec()).collect::<Vec<u8>>();
 
-				channel.basic_publish("",reply_to.as_str(),Default::default(),response,
+				channel.basic_publish("",reply_to.as_str(),Default::default(), &response,
 					AMQPProperties::default()
 						.with_correlation_id(corr_id.clone())
 				).await.context("basic_publish")?;
@@ -599,7 +597,7 @@ impl Server
 			map.retain(|_key, value| value.elapsed().as_secs() < 32);
 		}
 
-		channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes().to_vec(),
+		channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes(),
 			AMQPProperties::default()
 				.with_correlation_id(format!("{}", correlation_id).into())
 				.with_reply_to(me.response_queue.name().clone())
@@ -614,7 +612,7 @@ impl Server
 		let extension = Duration::from_millis(250);
 		let instant = Instant::now();
 
-		while let Ok(Some(Ok((_,delivery)))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
+		while let Ok(Some(Ok(delivery))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
 		{
 			let elapsed = instant.elapsed();
 			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
