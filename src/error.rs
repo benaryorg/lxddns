@@ -10,6 +10,14 @@ pub(crate) use ::
 		Context,
 		Result,
 	},
+	log::
+	{
+		trace,
+		debug,
+		info,
+		warn,
+		error,
+	}
 };
 
 #[derive(Error,Debug)]

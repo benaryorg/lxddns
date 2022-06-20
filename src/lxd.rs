@@ -1,12 +1,18 @@
 use crate::error::*;
 
-use super::
+use ::
 {
-	Deserialize,
-	FromStr,
-	Getters,
-	HashMap,
-	static_regex,
+	getset::Getters,
+	serde::
+	{
+		Deserialize,
+	},
+	regex_static::static_regex,
+	std::
+	{
+		str::FromStr,
+		collections::HashMap,
+	},
 };
 
 #[derive(Getters,Deserialize,Clone,Eq,PartialEq,Hash,Debug)]

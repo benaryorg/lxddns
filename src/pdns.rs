@@ -1,16 +1,27 @@
 #[allow(unused)]
 use crate::error::*;
 
-use super::
+use crate::
 {
-	Deserialize,
-	Deserializer,
-	Getters,
-	Serialize,
-	ContainerName,
-	Ipv6Addr,
-	trace,
-	debug,
+	lxd::ContainerName,
+};
+
+use ::
+{
+	getset::Getters,
+	serde::
+	{
+		Deserialize,
+		Deserializer,
+		Serialize,
+	},
+	std::
+	{
+		net::
+		{
+			Ipv6Addr,
+		},
+	},
 };
 
 #[derive(Clone,Eq,PartialEq,Hash,Debug)]

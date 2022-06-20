@@ -1,18 +1,20 @@
 #[rustfmt::skip]
 use ::
 {
-	lxddns::Server,
-	std::time::Duration,
-	async_std::
+	lxddns::
 	{
-		fs::remove_file,
-		task,
+		Responder,
+		Pipe,
+		Unix,
 	},
-	clap::Parser,
+	clap::
+	{
+		Parser,
+	},
 	log::
 	{
-		error,
 		info,
+		error,
 	},
 };
 
@@ -22,6 +24,74 @@ use ::
 #[clap(author, version, about, long_about = None)]
 struct Args
 {
+	/// loglevel to be used, if not specified uses env_logger's auto-detection
+	#[clap(short = 'v', long, global = true)]
+	loglevel: Option<String>,
+
+	#[clap(subcommand)]
+	command: Command,
+}
+
+#[derive(Parser, Debug)]
+enum Command
+{
+	/// run the responder, allowing container names on this host to resolve
+	Responder
+	{
+		/// connection string for the message queue
+		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
+		url: String,
+
+		/// name of queue to be used for query responses; if not specified uses randomly assigned queue name
+		#[clap(short, long)]
+		queue_name: Option<String>,
+
+		/// number of parallel worker threads for message queue responders (0: unlimited)
+		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
+		responder_workers: usize,
+	},
+
+	/// run the remote backend via a stdio pipe for PowerDNS
+	Pipe
+	{
+		/// connection string for the message queue
+		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
+		url: String,
+
+		/// hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
+		#[clap(long, value_name = "SOA_HOSTMASTER")]
+		hostmaster: String,
+
+		/// domain under which to run (do not forget the trailing dot)
+		#[clap(short, long)]
+		domain: String,
+	},
+
+	/// run the remote backend via a Unix Domain Socket for PowerDNS
+	Unix
+	{
+		/// connection string for the message queue
+		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
+		url: String,
+
+		/// hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
+		#[clap(long, value_name = "SOA_HOSTMASTER")]
+		hostmaster: String,
+
+		/// domain under which to run (do not forget the trailing dot)
+		#[clap(short, long)]
+		domain: String,
+
+		/// location of the unix domain socket to be created
+		#[clap(short, long, value_name = "SOCKET_PATH",  default_value = "/var/run/lxddns/lxddns.sock")]
+		socket: String,
+
+		/// number of parallel worker threads for unix domain socket connections (0: unlimited)
+		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
+		unix_workers: usize,
+	},
+
+	/*
 	/// connection string for the message queue
 	#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
 	url: String,
@@ -53,6 +123,7 @@ struct Args
 	/// number of parallel worker threads for unix domain socket connections (0: unlimited)
 	#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
 	unix_workers: usize,
+	*/
 }
 
 #[async_std::main]
@@ -72,31 +143,79 @@ async fn main()
 
 	info!("[main] logging initialised");
 
-	let server = Server::builder()
-		.url(args.url)
-		.domain(args.domain)
-		.hostmaster(args.hostmaster)
-		.unixpath(&args.socket)
-		.queuename(args.queuename.unwrap_or_else(|| "".to_string()))
-		.responder_workers(args.responder_workers)
-		.unix_workers(args.unix_workers)
-	;
-
-	info!("[main] running server");
-	match server.run().await
+	match args.command
 	{
-		Ok(_) => unreachable!(),
-		Err(err) =>
+		Command::Pipe { url, domain, hostmaster, } =>
 		{
-			error!("[main] fatal error occured: {}", err);
-			for err in err.chain().skip(1)
+			let pipe = Pipe::builder()
+				.url(url)
+				.domain(domain)
+				.hostmaster(hostmaster)
+			;
+
+			info!("[main] running pipe");
+			match pipe.run().await
 			{
-				error!("[main]  caused by: {}", err);
+				Ok(_) => {},
+				Err(err) =>
+				{
+					error!("[main][pipe] fatal error occured: {}", err);
+					for err in err.chain().skip(1)
+					{
+						error!("[main][pipe]  caused by: {}", err);
+					}
+					error!("[main][pipe] restarting all services");
+				},
 			}
-			error!("[main] restarting all services");
+		},
+		Command::Unix { url, domain, hostmaster, socket, unix_workers, } =>
+		{
+			let unix = Unix::builder()
+				.url(url)
+				.domain(domain)
+				.hostmaster(hostmaster)
+				.unixpath(socket)
+				.unix_workers(unix_workers)
+			;
+
+			info!("[main] running unix");
+			match unix.run().await
+			{
+				Ok(_) => {},
+				Err(err) =>
+				{
+					error!("[main][unix] fatal error occured: {}", err);
+					for err in err.chain().skip(1)
+					{
+						error!("[main][unix]  caused by: {}", err);
+					}
+					error!("[main][unix] restarting all services");
+				},
+			}
+		},
+		Command::Responder { url, queue_name, responder_workers, } =>
+		{
+			let responder = Responder::builder()
+				.url(url)
+				.queue_name(queue_name.unwrap_or_else(|| "".to_string()))
+				.responder_workers(responder_workers)
+			;
+
+			info!("[main] running responder");
+			match responder.run().await
+			{
+				Ok(_) => unreachable!(),
+				Err(err) =>
+				{
+					error!("[main][responder] fatal error occured: {}", err);
+					for err in err.chain().skip(1)
+					{
+						error!("[main][responder]  caused by: {}", err);
+					}
+					error!("[main][responder] restarting all services");
+				},
+			}
 		},
 	}
-	let _ = remove_file(args.socket).await;
-	task::sleep(Duration::from_secs(1)).await;
 }
 
