@@ -123,7 +123,7 @@ pub struct ContainerState
 	#[get = "pub"]
 	disk: HashMap<String,DiskState>,
 	#[get = "pub"]
-	network: HashMap<String,NetState>,
+	network: Option<HashMap<String,NetState>>,
 	#[get = "pub"]
 	memory: MemoryState,
 }

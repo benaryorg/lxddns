@@ -192,7 +192,17 @@ async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 		return Ok(None);
 	}
 
-	let addresses = state.network()
+	let network = match state.network()
+	{
+		Some(network) => network,
+		None =>
+		{
+			debug!("[local_query][{}] network is null despite container running, returning None", name.as_ref());
+			return Ok(None);
+		},
+	};
+
+	let addresses = network
 		.values()
 		.flat_map(|net| net.addresses().iter())
 		.filter(|address| address.scope() == &AddressScope::Global && address.family() == &AddressFamily::Inet6)
