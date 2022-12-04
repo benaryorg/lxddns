@@ -90,40 +90,6 @@ enum Command
 		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
 		unix_workers: usize,
 	},
-
-	/*
-	/// connection string for the message queue
-	#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
-	url: String,
-
-	/// loglevel to be used, if not specified uses env_logger's auto-detection
-	#[clap(short = 'v', long)]
-	loglevel: Option<String>,
-
-	/// hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
-	#[clap(short, long, value_name = "SOA_HOSTMASTER")]
-	hostmaster: String,
-
-	/// domain under which to run (do not forget the trailing dot)
-	#[clap(short, long)]
-	domain: String,
-
-	/// location of the unix domain socket to be created
-	#[clap(short, long, value_name = "SOCKET_PATH",  default_value = "/var/run/lxddns/lxddns.sock")]
-	socket: String,
-
-	/// name of queue to be used for query responses; if not specified uses randomly assigned queue name
-	#[clap(short, long)]
-	queuename: Option<String>,
-
-	/// number of parallel worker threads for message queue responders (0: unlimited)
-	#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
-	responder_workers: usize,
-
-	/// number of parallel worker threads for unix domain socket connections (0: unlimited)
-	#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
-	unix_workers: usize,
-	*/
 }
 
 #[async_std::main]
