@@ -41,11 +41,11 @@ impl Pipe
 		debug!("[pipe] channel created");
 
 		let handler = crate::pdns_io::PdnsStreamHandler::new(self.domain, self.hostmaster, channel, stdin(), stdout()).await?;
-		let res = handler.run().await?;
+		handler.run().await?;
 
 		debug!("[pipe] connection closed");
 
-		Ok(res)
+		Ok(())
 	}
 }
 

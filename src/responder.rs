@@ -390,7 +390,7 @@ impl ResponderBuilder
 	pub async fn run(self) -> Result<()>
 	{
 		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
-		let queue_name = self.queue_name.unwrap_or_else(|| "".to_string());
+		let queue_name = self.queue_name.unwrap_or_default();
 		let responder_workers = self.responder_workers.unwrap_or(8);
 
 		let connection = Connection::connect(url.as_ref(), Default::default())

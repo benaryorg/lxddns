@@ -163,7 +163,7 @@ async fn main()
 		{
 			let responder = Responder::builder()
 				.url(url)
-				.queue_name(queue_name.unwrap_or_else(|| "".to_string()))
+				.queue_name(queue_name.unwrap_or_default())
 				.responder_workers(responder_workers)
 			;
 
