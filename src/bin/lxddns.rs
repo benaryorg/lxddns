@@ -3,9 +3,9 @@ use ::
 {
 	lxddns::
 	{
-		Responder,
-		Pipe,
-		Unix,
+		AmqpResponder,
+		AmqpPipe,
+		AmqpUnix,
 	},
 	clap::
 	{
@@ -35,8 +35,9 @@ struct Args
 #[derive(Parser, Debug)]
 enum Command
 {
-	/// run the responder, allowing container names on this host to resolve
-	Responder
+	/// run the AMQP (e.g. RabbitMQ) responder, allowing container names on this host to resolve
+	#[clap(alias = "responder")]
+	AmqpResponder
 	{
 		/// connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
@@ -51,8 +52,9 @@ enum Command
 		responder_workers: usize,
 	},
 
-	/// run the remote backend via a stdio pipe for PowerDNS
-	Pipe
+	/// run the AMQP remote backend via a stdio pipe for PowerDNS
+	#[clap(alias = "pipe")]
+	AmqpPipe
 	{
 		/// connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
@@ -67,8 +69,9 @@ enum Command
 		domain: String,
 	},
 
-	/// run the remote backend via a Unix Domain Socket for PowerDNS
-	Unix
+	/// run the AMQP remote backend via a Unix Domain Socket for PowerDNS
+	#[clap(alias = "unix")]
+	AmqpUnix
 	{
 		/// connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
@@ -111,9 +114,9 @@ async fn main()
 
 	match args.command
 	{
-		Command::Pipe { url, domain, hostmaster, } =>
+		Command::AmqpPipe { url, domain, hostmaster, } =>
 		{
-			let pipe = Pipe::builder()
+			let pipe = AmqpPipe::builder()
 				.url(url)
 				.domain(domain)
 				.hostmaster(hostmaster)
@@ -134,9 +137,9 @@ async fn main()
 				},
 			}
 		},
-		Command::Unix { url, domain, hostmaster, socket, unix_workers, } =>
+		Command::AmqpUnix { url, domain, hostmaster, socket, unix_workers, } =>
 		{
-			let unix = Unix::builder()
+			let unix = AmqpUnix::builder()
 				.url(url)
 				.domain(domain)
 				.hostmaster(hostmaster)
@@ -159,9 +162,9 @@ async fn main()
 				},
 			}
 		},
-		Command::Responder { url, queue_name, responder_workers, } =>
+		Command::AmqpResponder { url, queue_name, responder_workers, } =>
 		{
-			let responder = Responder::builder()
+			let responder = AmqpResponder::builder()
 				.url(url)
 				.queue_name(queue_name.unwrap_or_default())
 				.responder_workers(responder_workers)
