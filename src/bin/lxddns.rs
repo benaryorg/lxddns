@@ -24,7 +24,7 @@ use ::
 #[clap(author, version, about, long_about = None)]
 struct Args
 {
-	/// loglevel to be used, if not specified uses env_logger's auto-detection
+	/// Loglevel to be used, if not specified uses env_logger's auto-detection
 	#[clap(short = 'v', long, global = true)]
 	loglevel: Option<String>,
 
@@ -35,61 +35,61 @@ struct Args
 #[derive(Parser, Debug)]
 enum Command
 {
-	/// run the AMQP (e.g. RabbitMQ) responder, allowing container names on this host to resolve
+	/// Run the AMQP (e.g. RabbitMQ) responder, allowing container names on this host to resolve
 	#[clap(alias = "responder")]
 	AmqpResponder
 	{
-		/// connection string for the message queue
+		/// Connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
 		url: String,
 
-		/// name of queue to be used for query responses; if not specified uses randomly assigned queue name
+		/// Name of queue to be used for query responses; if not specified uses randomly assigned queue name
 		#[clap(short, long)]
 		queue_name: Option<String>,
 
-		/// number of parallel worker threads for message queue responders (0: unlimited)
+		/// Number of parallel worker threads for message queue responders (0: unlimited)
 		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
 		responder_workers: usize,
 	},
 
-	/// run the AMQP remote backend via a stdio pipe for PowerDNS
+	/// Run the AMQP remote backend via a stdio pipe for PowerDNS
 	#[clap(alias = "pipe")]
 	AmqpPipe
 	{
-		/// connection string for the message queue
+		/// Connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
 		url: String,
 
-		/// hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
+		/// Hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
 		#[clap(long, value_name = "SOA_HOSTMASTER")]
 		hostmaster: String,
 
-		/// domain under which to run (do not forget the trailing dot)
+		/// Domain under which to run (do not forget the trailing dot)
 		#[clap(short, long)]
 		domain: String,
 	},
 
-	/// run the AMQP remote backend via a Unix Domain Socket for PowerDNS
+	/// Run the AMQP remote backend via a Unix Domain Socket for PowerDNS
 	#[clap(alias = "unix")]
 	AmqpUnix
 	{
-		/// connection string for the message queue
+		/// Connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
 		url: String,
 
-		/// hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
+		/// Hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
 		#[clap(long, value_name = "SOA_HOSTMASTER")]
 		hostmaster: String,
 
-		/// domain under which to run (do not forget the trailing dot)
+		/// Domain under which to run (do not forget the trailing dot)
 		#[clap(short, long)]
 		domain: String,
 
-		/// location of the unix domain socket to be created
+		/// Location of the unix domain socket to be created
 		#[clap(short, long, value_name = "SOCKET_PATH",  default_value = "/var/run/lxddns/lxddns.sock")]
 		socket: String,
 
-		/// number of parallel worker threads for unix domain socket connections (0: unlimited)
+		/// Number of parallel worker threads for unix domain socket connections (0: unlimited)
 		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
 		unix_workers: usize,
 	},
