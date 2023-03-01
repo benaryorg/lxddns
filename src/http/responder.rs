@@ -5,7 +5,11 @@ use crate::
 	{
 		local_query,
 	},
-	http::ApiResponse,
+	http::
+	{
+		ApiResponse,
+		ApiResponseV1,
+	},
 };
 
 use ::
@@ -52,7 +56,8 @@ async fn resolve(name: web::Path<String>) -> impl ActixResponder
 		Err(err) => HttpResponse::BadRequest().body(format!("{}", err)),
 		Ok(name) => match local_query(&name).await
 		{
-			Ok(res) => HttpResponse::Ok().json(ApiResponse::V1(res)),
+			Ok(None) => HttpResponse::Ok().json(ApiResponse::V1(ApiResponseV1::NoMatch)),
+			Ok(Some(res)) => HttpResponse::Ok().json(ApiResponse::V1(ApiResponseV1::AnyMatch(res))),
 			Err(err) => HttpResponse::InternalServerError().body(format!("{}", err)),
 		},
 	}
@@ -71,7 +76,6 @@ impl Responder
 		Default::default()
 	}
 
-	#[actix_web::main]
 	pub async fn run(self) -> Result<()>
 	{
 		info!("[http-responder][run] webserver starting");
@@ -162,18 +166,11 @@ impl ResponderBuilder
 
 		info!("[http-responder][run] certificates parsed");
 
-		async_std::task::spawn_blocking(move || -> Result<()>
+		Responder
 		{
-			info!("[http-responder][run] parameters parsed");
-			Responder
-			{
-				tls_config,
-				https_bind,
-			}.run()?;
-
-			Ok(())
-		}).await?;
-
+			tls_config,
+			https_bind,
+		}.run().await?;
 		Ok(())
 	}
 }

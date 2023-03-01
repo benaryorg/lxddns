@@ -5,7 +5,11 @@ use crate::
 	{
 		ContainerName,
 	},
-	http::ApiResponse,
+	http::
+	{
+		ApiResponse,
+		ApiResponseV1,
+	},
 	pdns_io::
 	{
 		RemoteQuery as RemoteQueryTrait,
@@ -18,10 +22,11 @@ use ::
 	{
 		Client,
 	},
-	async_std::prelude::*,
 	futures::
 	{
-		future::join_all,
+		stream,
+		FutureExt,
+		StreamExt,
 	},
 	std::
 	{
@@ -67,34 +72,62 @@ impl RemoteQueryTrait for RemoteQuery
 
 	async fn remote_query(&self, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	{
-		debug!("[http-remote_query][{}] starting query", name.as_ref());
+		debug!("[remote_query][{}] starting query", name.as_ref());
 		let instant = Instant::now();
-		let requests = self.remote.iter()
-			.map(|remote| self.http.get(format!("{}/resolve/v1/{}", remote, name.as_ref())).send())
-			.collect::<Vec<_>>();
-
-		let responses = join_all(requests).timeout(Duration::from_millis(4000)).await?;
-		let mut result: Option<Vec<Ipv6Addr>> = None;
-		for response in responses
-		{
-			// TODO: error handling
-			trace!("[http-remote_query][{}]: {:?}", name.as_ref(), response);
-			if let Ok(response) = response
+		let mut requests = stream::iter(self.remote.clone())
+			.filter_map(|remote|
 			{
-				if response.status().is_success()
-				{
-					if let Ok(response) = response.json::<ApiResponse>().await
+				self.http.get(format!("{}/resolve/v1/{}", remote, name.as_ref())).send()
+					.then(|response| Box::pin(async move
 					{
-						if let ApiResponse::V1(Some(response)) = response
+						match response
 						{
-							match result
+							Err(err) =>
 							{
-								Some(ref mut vec) => vec.extend(response),
-								None => result = Some(response),
+								warn!("[remote_query][{}] http error: {:?}", remote, err);
+								None
+							},
+							Ok(response) =>
+							{
+								let status = response.status();
+								if !status.is_success()
+								{
+									warn!("[remote_query][{}] unexpected http response code: {:?}", remote, status);
+									None
+								}
+								else
+								{
+									match response.json::<ApiResponse>().await
+									{
+										Ok(response) => Some(response),
+										Err(err) =>
+										{
+											warn!("[remote_query][{}] json deserialization error: {:?}", remote, err);
+											None
+										},
+									}
+								}
 							}
 						}
+					}))
+			})
+		;
+
+		let mut result: Option<Vec<Ipv6Addr>> = None;
+		while let Some(response) = requests.next().await
+		{
+			trace!("[http-remote_query][{}]: {:?}", name.as_ref(), response);
+			match response
+			{
+				ApiResponse::V1(ApiResponseV1::NoMatch) => {},
+				ApiResponse::V1(ApiResponseV1::AnyMatch(response)) =>
+				{
+					match result
+					{
+						Some(ref mut vec) => vec.extend(response),
+						None => result = Some(response),
 					}
-				}
+				},
 			}
 		}
 

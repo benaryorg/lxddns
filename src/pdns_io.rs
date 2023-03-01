@@ -15,26 +15,21 @@ use crate::
 
 use ::
 {
-	futures::
-	{
-		stream::
-		{
-			StreamExt,
-		},
-	},
 	serde_json::
 	{
 		json,
 	},
-	async_std::
+	tokio::
 	{
-		prelude::*,
 		io::
 		{
 			BufReader,
-			Read,
-			Write,
+			AsyncBufReadExt,
+			AsyncRead,
+			AsyncWrite,
+			AsyncWriteExt,
 		},
+		time::timeout,
 	},
 	std::
 	{
@@ -57,8 +52,8 @@ pub trait RemoteQuery
 
 pub struct PdnsStreamHandler<R, W, B>
 	where
-		R: Read+Unpin,
-		W: Write+Unpin,
+		R: AsyncRead+Unpin,
+		W: AsyncWrite+Unpin,
 		B: RemoteQuery,
 {
 	domain: String,
@@ -70,8 +65,8 @@ pub struct PdnsStreamHandler<R, W, B>
 
 impl<R, W, B> PdnsStreamHandler<R, W, B>
 	where
-		R: Read+Unpin,
-		W: Write+Unpin,
+		R: AsyncRead+Unpin,
+		W: AsyncWrite+Unpin,
 		B: RemoteQuery,
 {
 	pub async fn new<S1, S2>(domain: S1, hostmaster: S2, backend: B, reader: R, writer: W) -> Result<Self>
@@ -96,7 +91,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 		debug!("[pdns_io][handler] handling stream with queue {}", self.backend.name());
 
 		let mut lines = BufReader::new(&mut self.reader).split(b'\n');
-		while let Some(input) = lines.next().await
+		while let Some(input) = lines.next_segment().await.transpose()
 		{
 			trace!("[pdns_io][handler] request received");
 			let input = match input
@@ -123,7 +118,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 							debug!("[pdns_io][handler][{}] smart response, querying {}", query.qname(), container.as_ref());
 
 							let instant = Instant::now();
-							let result = self.backend.remote_query(&container).timeout(Duration::from_millis(4500)).await;
+							let result = timeout(Duration::from_millis(4500),self.backend.remote_query(&container)).await;
 
 							debug!("[pdns_io][handler][{}] remote_query ran for {:.3}s (timeout: {})", query.qname(), instant.elapsed().as_secs_f64(), result.is_err());
 
@@ -139,7 +134,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 									{
 										Ok(json) =>
 										{
-											if let Err(err) = writeln!(self.writer, "{}", json).await
+											if let Err(err) = self.writer.write_all(format!("{}", json).as_bytes()).await
 											{
 												warn!("[pdns_io][handler][{}] closing unix stream due to socket error: {}", query.qname(), err);
 												break;
@@ -169,7 +164,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 							{
 								Ok(json) =>
 								{
-									if let Err(err) = writeln!(self.writer, "{}", json).await
+									if let Err(err) = self.writer.write_all(format!("{}", json).as_bytes()).await
 									{
 										warn!("[pdns_io][handler][{}] closing unix stream due to socket error: {}", query.qname(), err);
 										break;
@@ -186,7 +181,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 				},
 				Ok(Query::Initialize) =>
 				{
-					if let Err(err) = writeln!(self.writer, "{}", json!({ "result": true })).await
+					if let Err(err) = self.writer.write_all(format!("{}", json!({ "result": true })).as_bytes()).await
 					{
 						warn!("[pdns_io][handler] closing unix stream due to socket error: {}", err);
 						break;
@@ -195,7 +190,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 				Ok(Query::Unknown) =>
 				{
 					debug!("[pdns_io][handler] unknown query: {:?}", String::from_utf8_lossy(&input));
-					if let Err(err) = writeln!(self.writer, "{}", json!({ "result": false })).await
+					if let Err(err) = self.writer.write_all(format!("{}", json!({ "result": false })).as_bytes()).await
 					{
 						warn!("[pdns_io][handler] closing unix stream due to socket error: {}", err);
 						break;

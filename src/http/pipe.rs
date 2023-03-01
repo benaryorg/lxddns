@@ -5,7 +5,7 @@ use crate::
 
 use ::
 {
-	async_std::
+	tokio::
 	{
 		io::
 		{

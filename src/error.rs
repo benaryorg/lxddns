@@ -29,8 +29,13 @@ pub enum Error
 	Io(#[from] ::std::io::Error),
 	#[error("number parsing error")]
 	NumberParsing(#[from] ::std::num::ParseIntError),
+	#[cfg(feature = "amqp")]
 	#[error("lapin (AMQP) error")]
 	Lapin(#[from] ::lapin::Error),
+	#[cfg(feature = "http")]
+	#[error("reqwest error")]
+	Reqwest(#[from] ::reqwest::Error),
+	#[cfg(feature = "http")]
 	#[error("rustls error")]
 	Rustls(#[from] ::rustls::Error),
 	#[error("responder failed with error")]
@@ -59,5 +64,7 @@ pub enum Error
 	DuplicateCorrelationId,
 	#[error("http server failed with error")]
 	HttpServerError,
+	#[error("http request failed with error")]
+	HttpRequestError,
 }
 

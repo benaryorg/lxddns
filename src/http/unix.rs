@@ -5,16 +5,24 @@ use crate::
 
 use ::
 {
-	async_std::
+	tokio_stream::wrappers::UnixListenerStream,
+	tokio::
 	{
-		os::unix::net::UnixListener,
-		fs::remove_file,
-		path::PathBuf,
+		net::UnixListener,
+		fs::
+		{
+			remove_file,
+			metadata,
+		},
 	},
 	futures::
 	{
 		TryStreamExt,
 		StreamExt,
+	},
+	std::
+	{
+		os::unix::fs::FileTypeExt,
 	},
 };
 
@@ -23,7 +31,7 @@ pub struct Unix
 	remote: Vec<String>,
 	domain: String,
 	hostmaster: String,
-	unixpath: PathBuf,
+	unixpath: String,
 	unix_workers: usize,
 }
 
@@ -34,40 +42,61 @@ impl Unix
 		Default::default()
 	}
 
-	#[actix_web::main]
-	pub async fn run(self) -> Result<()>
+	pub async fn run(&self) -> Result<()>
 	{
-		debug!("[http-unix] started");
+		debug!("[unix] started");
 
-		let path = self.unixpath.as_path();
-		if path.exists().await
+		match metadata(&self.unixpath).await
 		{
-			warn!("[http-unix] removing potentially stale socket");
-			remove_file(path).await?;
+			Ok(metadata) =>
+			{
+				if metadata.file_type().is_socket()
+				{
+					warn!("[unix] removing potentially stale socket");
+					remove_file(&self.unixpath).await?;
+				}
+				else
+				{
+					Err(Error::UnixServerError).with_context(|| format!("unix socket exists and is not a file: {}", self.unixpath))?;
+				}
+			},
+			Err(err) =>
+			{
+				if err.kind() != std::io::ErrorKind::NotFound
+				{
+					bail!(err);
+				}
+			},
 		}
 
-		let listener = UnixListener::bind(path).await?;
+		let listener = UnixListener::bind(&self.unixpath)?;
 		info!("[http-unix] unix socket opened");
 
-		listener.incoming().map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(self.unix_workers, |stream|
+		UnixListenerStream::new(listener).map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(self.unix_workers, |stream|
 		{
 			let me = &self;
 			async move
 			{
-				debug!("[http-unix] connection opened");
+				debug!("[unix] connection opened");
 
-				let backend = super::query::RemoteQuery::new(me.remote.clone()).await?;
-				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.hostmaster, backend, stream.clone(), stream).await?;
+				let backend = super::query::RemoteQuery::new(self.remote.clone()).await?;
+				let (read, write) = stream.into_split();
+				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.hostmaster, backend, read, write).await?;
 				handler.run().await?;
 
-				debug!("[http-unix] connection closed");
+				debug!("[unix] connection closed");
 				Ok(())
 			}
 		}).await?;
 
-		remove_file(path).await?;
+		remove_file(&self.unixpath).await?;
 		debug!("[http-unix] stopped");
 
+		Ok(())
+	}
+
+	pub async fn handle_connection(&self) -> Result<()>
+	{
 		Ok(())
 	}
 }
@@ -78,7 +107,7 @@ pub struct UnixBuilder
 	remote: Option<Vec<String>>,
 	domain: Option<String>,
 	hostmaster: Option<String>,
-	unixpath: Option<PathBuf>,
+	unixpath: Option<String>,
 	unix_workers: Option<usize>,
 }
 
@@ -104,7 +133,7 @@ impl UnixBuilder
 
 	pub fn unixpath(mut self, unixpath: String) -> Self
 	{
-		self.unixpath = Some(PathBuf::from(unixpath));
+		self.unixpath = Some(unixpath);
 		self
 	}
 
@@ -122,21 +151,15 @@ impl UnixBuilder
 		let unixpath = self.unixpath.map(Result::Ok).unwrap_or_else(|| bail!("no unixpath provided")).context(Error::InvalidConfiguration)?;
 		let unix_workers = self.unix_workers.unwrap_or(0);
 
-		async_std::task::spawn_blocking(move || -> Result<()>
+		info!("[http-unix][run] parameters parsed");
+		Unix
 		{
-			info!("[http-unix][run] parameters parsed");
-			Unix
-			{
-				remote,
-				domain,
-				hostmaster,
-				unixpath,
-				unix_workers,
-			}.run()?;
-
-			Ok(())
-		}).await?;
-
+			remote,
+			domain,
+			hostmaster,
+			unixpath,
+			unix_workers,
+		}.run().await?;
 		Ok(())
 	}
 }

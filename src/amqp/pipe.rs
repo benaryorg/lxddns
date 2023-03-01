@@ -9,7 +9,7 @@ use ::
 	{
 		Connection,
 	},
-	async_std::
+	tokio::
 	{
 		io::
 		{

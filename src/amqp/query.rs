@@ -26,6 +26,10 @@ use ::
 		},
 		protocol::basic::AMQPProperties,
 	},
+	tokio::
+	{
+		time::timeout,
+	},
 	futures::
 	{
 		stream::
@@ -34,19 +38,15 @@ use ::
 		},
 	},
 	uuid::Uuid,
-	async_std::
-	{
-		prelude::*,
-	},
 	std::
 	{
-		convert::TryInto,
 		time::
 		{
 			Duration,
 			Instant,
 		},
 		net::Ipv6Addr,
+		convert::TryInto,
 	},
 };
 
@@ -118,11 +118,11 @@ impl RemoteQueryTrait for RemoteQuery
 
 		// FIXME: this timeout needs to be configurable
 		//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
-		let mut timeout = Duration::from_millis(2000);
+		let mut timer = Duration::from_millis(2000);
 		let extension = Duration::from_millis(250);
 		let instant = Instant::now();
 
-		while let Ok(Some(Ok(delivery))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
+		while let Ok(Some(Ok(delivery))) = timeout(timer.saturating_sub(instant.elapsed()), consumer.next()).await
 		{
 			let elapsed = instant.elapsed();
 			trace!("[amqp-remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
@@ -165,7 +165,7 @@ impl RemoteQueryTrait for RemoteQuery
 				continue;
 			}
 
-			timeout = elapsed + (elapsed + 2*extension)/2;
+			timer = elapsed + (elapsed + 2*extension)/2;
 
 			if let Ok(addresses) = delivery.data.chunks(16)
 				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))

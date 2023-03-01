@@ -9,16 +9,24 @@ use ::
 	{
 		Connection,
 	},
-	async_std::
+	tokio_stream::wrappers::UnixListenerStream,
+	tokio::
 	{
-		os::unix::net::UnixListener,
-		fs::remove_file,
-		path::PathBuf,
+		net::UnixListener,
+		fs::
+		{
+			remove_file,
+			metadata,
+		},
 	},
 	futures::
 	{
 		TryStreamExt,
 		StreamExt,
+	},
+	std::
+	{
+		os::unix::fs::FileTypeExt,
 	},
 };
 
@@ -27,7 +35,7 @@ pub struct Unix
 	domain: String,
 	hostmaster: String,
 	connection: Connection,
-	unixpath: PathBuf,
+	unixpath: String,
 	unix_workers: usize,
 }
 
@@ -42,17 +50,33 @@ impl Unix
 	{
 		debug!("[unix] started");
 
-		let path = self.unixpath.as_path();
-		if path.exists().await
+		match metadata(&self.unixpath).await
 		{
-			warn!("[unix] removing potentially stale socket");
-			remove_file(path).await?;
+			Ok(metadata) =>
+			{
+				if metadata.file_type().is_socket()
+				{
+					warn!("[unix] removing potentially stale socket");
+					remove_file(&self.unixpath).await?;
+				}
+				else
+				{
+					Err(Error::UnixServerError).with_context(|| format!("unix socket exists and is not a file: {}", self.unixpath))?;
+				}
+			},
+			Err(err) =>
+			{
+				if err.kind() != std::io::ErrorKind::NotFound
+				{
+					bail!(err);
+				}
+			},
 		}
 
-		let listener = UnixListener::bind(path).await?;
+		let listener = UnixListener::bind(&self.unixpath)?;
 		info!("[unix] unix socket opened");
 
-		listener.incoming().map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(self.unix_workers, |stream|
+		UnixListenerStream::new(listener).map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(self.unix_workers, |stream|
 		{
 			let me = &self;
 			async move
@@ -63,7 +87,8 @@ impl Unix
 				debug!("[unix] channel created");
 
 				let backend = super::query::RemoteQuery::new(channel).await?;
-				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.hostmaster, backend, stream.clone(), stream).await?;
+				let (read, write) = stream.into_split();
+				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.hostmaster, backend, read, write).await?;
 				handler.run().await?;
 
 				debug!("[unix] connection closed");
@@ -71,7 +96,7 @@ impl Unix
 			}
 		}).await?;
 
-		remove_file(path).await?;
+		remove_file(self.unixpath).await?;
 		debug!("[unix] stopped");
 
 		Ok(())
@@ -84,7 +109,7 @@ pub struct UnixBuilder
 	url: Option<String>,
 	domain: Option<String>,
 	hostmaster: Option<String>,
-	unixpath: Option<PathBuf>,
+	unixpath: Option<String>,
 	unix_workers: Option<usize>,
 }
 
@@ -110,7 +135,7 @@ impl UnixBuilder
 
 	pub fn unixpath(mut self, unixpath: String) -> Self
 	{
-		self.unixpath = Some(PathBuf::from(unixpath));
+		self.unixpath = Some(unixpath);
 		self
 	}
 

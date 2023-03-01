@@ -8,11 +8,10 @@ use ::
 		Deserialize,
 	},
 	regex_static::static_regex,
-	async_std::
+	tokio::
 	{
 		process::
 		{
-			Stdio,
 			Command,
 		},
 	},
@@ -21,6 +20,7 @@ use ::
 		str::FromStr,
 		collections::HashMap,
 		net::Ipv6Addr,
+		process::Stdio,
 		time::
 		{
 			Instant,
@@ -176,6 +176,11 @@ impl FromStr for ContainerName
 	}
 }
 
+/// Queries the local LXD instance.
+/// The local instance is queried by executing an `lxc query` command with *sudo*.
+///
+/// Values returned are either `Err` if querying failed, `Ok(None)` if the instance was not found locally, or `Ok(vec![])` if the instance was found.
+/// The last case includes instances without addresses assigned.
 pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
 	trace!("[local_query][{}] starting query", name.as_ref());

@@ -36,7 +36,7 @@ use ::
 			TryStreamExt,
 		},
 	},
-	async_std::
+	std::
 	{
 		sync::Arc,
 	},
