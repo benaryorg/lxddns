@@ -5,10 +5,6 @@ use crate::
 
 use ::
 {
-	lapin::
-	{
-		Connection,
-	},
 	async_std::
 	{
 		io::
@@ -21,9 +17,9 @@ use ::
 
 pub struct Pipe
 {
+	remote: Vec<String>,
 	domain: String,
 	hostmaster: String,
-	connection: Connection,
 }
 
 impl Pipe
@@ -37,10 +33,7 @@ impl Pipe
 	{
 		debug!("[pipe] connection opened");
 
-		let channel = self.connection.create_channel().await?;
-		debug!("[pipe] channel created");
-
-		let backend = super::query::RemoteQuery::new(channel).await?;
+		let backend = super::query::RemoteQuery::new(self.remote).await?;
 		let handler = crate::pdns_io::PdnsStreamHandler::new(self.domain, self.hostmaster, backend, stdin(), stdout()).await?;
 		handler.run().await?;
 
@@ -53,16 +46,16 @@ impl Pipe
 #[derive(Clone,Eq,PartialEq,Hash,Debug,Default)]
 pub struct PipeBuilder
 {
-	url: Option<String>,
+	remote: Option<Vec<String>>,
 	domain: Option<String>,
 	hostmaster: Option<String>,
 }
 
 impl PipeBuilder
 {
-	pub fn url<S: AsRef<str>>(mut self, url: S) -> Self
+	pub fn remote(mut self, remote: Vec<String>) -> Self
 	{
-		self.url = Some(url.as_ref().into());
+		self.remote = Some(remote);
 		self
 	}
 
@@ -80,21 +73,15 @@ impl PipeBuilder
 
 	pub async fn run(self) -> Result<()>
 	{
-		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
+		let remote = self.remote.map(Result::Ok).unwrap_or_else(|| bail!("no remote provided")).context(Error::InvalidConfiguration)?;
 		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
 		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
 
-		let connection = Connection::connect(url.as_ref(), Default::default())
-			.await
-			.context("connect failed")
-			.context(Error::QueueConnectionError)
-		?;
-
 		Pipe
 		{
+			remote,
 			domain,
 			hostmaster,
-			connection,
 		}.run().await
 	}
 }

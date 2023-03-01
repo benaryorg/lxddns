@@ -31,6 +31,8 @@ pub enum Error
 	NumberParsing(#[from] ::std::num::ParseIntError),
 	#[error("lapin (AMQP) error")]
 	Lapin(#[from] ::lapin::Error),
+	#[error("rustls error")]
+	Rustls(#[from] ::rustls::Error),
 	#[error("responder failed with error")]
 	ResponderError,
 	#[error("responder closed gracefully")]
@@ -55,5 +57,7 @@ pub enum Error
 	AcknowledgementError,
 	#[error("correlation id was reused")]
 	DuplicateCorrelationId,
+	#[error("http server failed with error")]
+	HttpServerError,
 }
 

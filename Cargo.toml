@@ -10,8 +10,10 @@ license = "ISC"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix-web = { version = "^4.3", features = ["rustls"] }
 anyhow = "^1.0"
 async-std = { version = "^1.12", features = ["attributes", "unstable"] }
+async-trait = "^0.1.64"
 clap = { version = "^4.0", features = ["derive", "env"] }
 env_logger = { version = "^0.10", features = ["color", "auto-color"] }
 futures = "^0.3.25"
@@ -19,8 +21,10 @@ getset = "^0.1.2"
 lapin = "^2.1"
 log = "^0.4.17"
 regex_static = "^0.1.1"
+reqwest = { version = "^0.11.14", features = ["rustls-tls-native-roots", "rustls", "json"] }
+rustls = "^0.20.8"
+rustls-pemfile = "^1.0"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 thiserror = "^1.0"
 uuid = { version = "^1.2", features = ["serde", "v4"] }
-

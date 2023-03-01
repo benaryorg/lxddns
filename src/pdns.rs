@@ -566,7 +566,7 @@ impl ResponseEntry
 			qtype: "AAAA".to_string(),
 			qname: domain.as_ref().to_string(),
 			// FIXME: this ttl needs to be configurable
-			ttl: 16,
+			ttl: 128,
 		}
 	}
 }

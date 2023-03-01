@@ -5,10 +5,6 @@ use crate::
 
 use ::
 {
-	lapin::
-	{
-		Connection,
-	},
 	async_std::
 	{
 		os::unix::net::UnixListener,
@@ -24,9 +20,9 @@ use ::
 
 pub struct Unix
 {
+	remote: Vec<String>,
 	domain: String,
 	hostmaster: String,
-	connection: Connection,
 	unixpath: PathBuf,
 	unix_workers: usize,
 }
@@ -38,41 +34,39 @@ impl Unix
 		Default::default()
 	}
 
+	#[actix_web::main]
 	pub async fn run(self) -> Result<()>
 	{
-		debug!("[unix] started");
+		debug!("[http-unix] started");
 
 		let path = self.unixpath.as_path();
 		if path.exists().await
 		{
-			warn!("[unix] removing potentially stale socket");
+			warn!("[http-unix] removing potentially stale socket");
 			remove_file(path).await?;
 		}
 
 		let listener = UnixListener::bind(path).await?;
-		info!("[unix] unix socket opened");
+		info!("[http-unix] unix socket opened");
 
 		listener.incoming().map(|res| res.context(Error::UnixServerError)).try_for_each_concurrent(self.unix_workers, |stream|
 		{
 			let me = &self;
 			async move
 			{
-				debug!("[unix] connection opened");
+				debug!("[http-unix] connection opened");
 
-				let channel = me.connection.create_channel().await?;
-				debug!("[unix] channel created");
-
-				let backend = super::query::RemoteQuery::new(channel).await?;
+				let backend = super::query::RemoteQuery::new(me.remote.clone()).await?;
 				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.hostmaster, backend, stream.clone(), stream).await?;
 				handler.run().await?;
 
-				debug!("[unix] connection closed");
+				debug!("[http-unix] connection closed");
 				Ok(())
 			}
 		}).await?;
 
 		remove_file(path).await?;
-		debug!("[unix] stopped");
+		debug!("[http-unix] stopped");
 
 		Ok(())
 	}
@@ -81,7 +75,7 @@ impl Unix
 #[derive(Clone,Eq,PartialEq,Hash,Debug,Default)]
 pub struct UnixBuilder
 {
-	url: Option<String>,
+	remote: Option<Vec<String>>,
 	domain: Option<String>,
 	hostmaster: Option<String>,
 	unixpath: Option<PathBuf>,
@@ -90,9 +84,9 @@ pub struct UnixBuilder
 
 impl UnixBuilder
 {
-	pub fn url<S: AsRef<str>>(mut self, url: S) -> Self
+	pub fn remote(mut self, remote: Vec<String>) -> Self
 	{
-		self.url = Some(url.as_ref().into());
+		self.remote = Some(remote);
 		self
 	}
 
@@ -122,26 +116,28 @@ impl UnixBuilder
 
 	pub async fn run(self) -> Result<()>
 	{
-		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
+		let remote = self.remote.map(Result::Ok).unwrap_or_else(|| bail!("no remote provided")).context(Error::InvalidConfiguration)?;
 		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
 		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
 		let unixpath = self.unixpath.map(Result::Ok).unwrap_or_else(|| bail!("no unixpath provided")).context(Error::InvalidConfiguration)?;
 		let unix_workers = self.unix_workers.unwrap_or(0);
 
-		let connection = Connection::connect(url.as_ref(), Default::default())
-			.await
-			.context("connect failed")
-			.context(Error::QueueConnectionError)
-		?;
-
-		Unix
+		async_std::task::spawn_blocking(move || -> Result<()>
 		{
-			domain,
-			hostmaster,
-			connection,
-			unixpath,
-			unix_workers,
-		}.run().await
+			info!("[http-unix][run] parameters parsed");
+			Unix
+			{
+				remote,
+				domain,
+				hostmaster,
+				unixpath,
+				unix_workers,
+			}.run()?;
+
+			Ok(())
+		}).await?;
+
+		Ok(())
 	}
 }
 

@@ -6,6 +6,9 @@ use ::
 		AmqpResponder,
 		AmqpPipe,
 		AmqpUnix,
+		HttpResponder,
+		HttpPipe,
+		HttpUnix,
 	},
 	clap::
 	{
@@ -35,6 +38,66 @@ struct Args
 #[derive(Parser, Debug)]
 enum Command
 {
+	/// Run the HTTP responder, allowing container names on this host to resolve
+	HttpResponder
+	{
+		/// Address-Port pair to bind to for incoming HTTPS traffic.
+		#[clap(short = 'b', long, value_name = "HTTP:PORT", default_value = "[::1]:9132", env = "LXDDNS_HTTP_BIND")]
+		https_bind: String,
+
+		/// File containing the TLS certificate chain.
+		#[clap(short = 'c', long, value_name = "FILE", env = "LXDDNS_HTTP_TLS_CHAIN")]
+		tls_chain: String,
+
+		/// File containing the TLS key.
+		#[clap(short = 'k', long, value_name = "FILE", env = "LXDDNS_HTTP_TLS_KEY")]
+		tls_key: String,
+	},
+
+	/// Run the HTTP remote backend via a stdio pipe for PowerDNS
+	HttpPipe
+	{
+		/// API root of remote instances.
+		///
+		/// The root for of a remote API with the endpoint `https://example.com/lxddns/v1/resolve` would thus be `https://example.com/lxddns`.
+		#[clap(short, long, value_name = "API_ROOT")]
+		remote: Vec<String>,
+
+		/// Hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
+		#[clap(long, value_name = "SOA_HOSTMASTER")]
+		hostmaster: String,
+
+		/// Domain under which to run (do not forget the trailing dot)
+		#[clap(short, long)]
+		domain: String,
+	},
+
+	/// Run the HTTP remote backend via a Unix Domain Socket for PowerDNS
+	HttpUnix
+	{
+		/// API root of remote instances.
+		///
+		/// The root for of a remote API with the endpoint `https://example.com/lxddns/v1/resolve` would thus be `https://example.com/lxddns`.
+		#[clap(short, long, value_name = "API_ROOT")]
+		remote: Vec<String>,
+
+		/// Hostmaster to announce in SOA (use dot notation including trailing dot as in hostmaster.example.org.)
+		#[clap(long, value_name = "SOA_HOSTMASTER")]
+		hostmaster: String,
+
+		/// Domain under which to run (do not forget the trailing dot)
+		#[clap(short, long)]
+		domain: String,
+
+		/// Location of the unix domain socket to be created
+		#[clap(short, long, value_name = "SOCKET_PATH",  default_value = "/var/run/lxddns/lxddns.sock")]
+		socket: String,
+
+		/// Number of parallel worker threads for unix domain socket connections (0: unlimited)
+		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
+		unix_workers: usize,
+	},
+
 	/// Run the AMQP (e.g. RabbitMQ) responder, allowing container names on this host to resolve
 	#[clap(alias = "responder")]
 	AmqpResponder
@@ -182,6 +245,77 @@ async fn main()
 						error!("[main][responder]  caused by: {}", err);
 					}
 					error!("[main][responder] restarting all services");
+				},
+			}
+		},
+		Command::HttpPipe { remote, hostmaster, domain, } =>
+		{
+			let pipe = HttpPipe::builder()
+				.remote(remote)
+				.domain(domain)
+				.hostmaster(hostmaster)
+			;
+
+			info!("[main] running http-pipe");
+			match pipe.run().await
+			{
+				Ok(_) => {},
+				Err(err) =>
+				{
+					error!("[main][http-pipe] fatal error occured: {}", err);
+					for err in err.chain().skip(1)
+					{
+						error!("[main][http-pipe]  caused by: {}", err);
+					}
+					error!("[main][http-pipe] restarting all services");
+				},
+			}
+		},
+		Command::HttpResponder { https_bind, tls_chain, tls_key, } =>
+		{
+			let responder = HttpResponder::builder()
+				.https_bind(https_bind)
+				.tls_chain(tls_chain)
+				.tls_key(tls_key)
+			;
+
+			info!("[main] running http-responder");
+			match responder.run().await
+			{
+				Ok(_) => unreachable!(),
+				Err(err) =>
+				{
+					error!("[main][http-responder] fatal error occured: {}", err);
+					for err in err.chain().skip(1)
+					{
+						error!("[main][http-responder]  caused by: {}", err);
+					}
+					error!("[main][http-responder] restarting all services");
+				},
+			}
+		},
+		Command::HttpUnix { remote, domain, hostmaster, socket, unix_workers, } =>
+		{
+			let unix = HttpUnix::builder()
+				.remote(remote)
+				.domain(domain)
+				.hostmaster(hostmaster)
+				.unixpath(socket)
+				.unix_workers(unix_workers)
+			;
+
+			info!("[main] running unix");
+			match unix.run().await
+			{
+				Ok(_) => {},
+				Err(err) =>
+				{
+					error!("[main][http-unix] fatal error occured: {}", err);
+					for err in err.chain().skip(1)
+					{
+						error!("[main][http-unix]  caused by: {}", err);
+					}
+					error!("[main][http-unix] restarting all services");
 				},
 			}
 		},

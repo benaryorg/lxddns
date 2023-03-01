@@ -15,19 +15,6 @@ use crate::
 
 use ::
 {
-	lapin::
-	{
-		Channel,
-		Queue,
-		options::
-		{
-			BasicAckOptions,
-			BasicConsumeOptions,
-			BasicRejectOptions,
-			QueueDeclareOptions,
-		},
-		protocol::basic::AMQPProperties,
-	},
 	futures::
 	{
 		stream::
@@ -39,7 +26,6 @@ use ::
 	{
 		json,
 	},
-	uuid::Uuid,
 	async_std::
 	{
 		prelude::*,
@@ -52,7 +38,6 @@ use ::
 	},
 	std::
 	{
-		convert::TryInto,
 		time::
 		{
 			Duration,
@@ -62,50 +47,45 @@ use ::
 	},
 };
 
-pub struct PdnsStreamHandler<R, W>
+/// Trait specifying how to query a remote backend.
+#[async_trait::async_trait]
+pub trait RemoteQuery
+{
+	async fn remote_query(&self, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>;
+	fn name(&self) -> String;
+}
+
+pub struct PdnsStreamHandler<R, W, B>
 	where
 		R: Read+Unpin,
 		W: Write+Unpin,
+		B: RemoteQuery,
 {
 	domain: String,
 	hostmaster: String,
-	channel: Channel,
-	response_queue: Queue,
+	backend: B,
 	reader: R,
 	writer: W,
 }
 
-impl<R, W> PdnsStreamHandler<R, W>
+impl<R, W, B> PdnsStreamHandler<R, W, B>
 	where
 		R: Read+Unpin,
 		W: Write+Unpin,
+		B: RemoteQuery,
 {
-	pub async fn new<S1, S2>(domain: S1, hostmaster: S2, channel: Channel, reader: R, writer: W) -> Result<Self>
+	pub async fn new<S1, S2>(domain: S1, hostmaster: S2, backend: B, reader: R, writer: W) -> Result<Self>
 		where
 			S1: AsRef<str>,
 			S2: AsRef<str>,
 	{
-		let response_queue = channel.queue_declare(
-			"",
-			QueueDeclareOptions
-			{
-				exclusive: false,
-				auto_delete: false,
-				..QueueDeclareOptions::default()
-			},
-			Default::default()
-		).await.with_context(|| "error in queue_declare")?;
-
-		info!("[pdns_io][handler] connection to message queue {} established", response_queue.name());
-
 		Ok(Self
 		{
 			domain: domain.as_ref().to_string(),
 			hostmaster: hostmaster.as_ref().to_string(),
-			channel,
+			backend,
 			reader,
 			writer,
-			response_queue,
 		})
 	}
 
@@ -113,7 +93,7 @@ impl<R, W> PdnsStreamHandler<R, W>
 	{
 		let soa_record = &ResponseEntry::soa(&self.domain, &self.hostmaster);
 
-		debug!("[pdns_io][handler] handling stream with queue {}", self.response_queue.name());
+		debug!("[pdns_io][handler] handling stream with queue {}", self.backend.name());
 
 		let mut lines = BufReader::new(&mut self.reader).split(b'\n');
 		while let Some(input) = lines.next().await
@@ -143,7 +123,7 @@ impl<R, W> PdnsStreamHandler<R, W>
 							debug!("[pdns_io][handler][{}] smart response, querying {}", query.qname(), container.as_ref());
 
 							let instant = Instant::now();
-							let result = Self::remote_query(&container, &self.channel, &self.response_queue).timeout(Duration::from_millis(4500)).await;
+							let result = self.backend.remote_query(&container).timeout(Duration::from_millis(4500)).await;
 
 							debug!("[pdns_io][handler][{}] remote_query ran for {:.3}s (timeout: {})", query.qname(), instant.elapsed().as_secs_f64(), result.is_err());
 
@@ -231,108 +211,6 @@ impl<R, W> PdnsStreamHandler<R, W>
 		debug!("[pdns_io][handler] connection closed");
 
 		Ok(())
-	}
-
-	async fn remote_query(name: &ContainerName, channel: &Channel, response_queue: &Queue) -> Result<Option<Vec<Ipv6Addr>>>
-	{
-		debug!("[remote_query][{}] starting query", name.as_ref());
-
-		let mut consumer = channel.basic_consume(response_queue.name().as_str(),
-			"",
-			BasicConsumeOptions
-			{
-				no_ack: false,
-				no_local: true,
-				..Default::default()
-			},
-			Default::default()
-		).await.with_context(|| "error in basic_consume")?;
-
-		let correlation_id = Uuid::new_v4();
-		trace!("[remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
-
-		channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes(),
-			AMQPProperties::default()
-				.with_correlation_id(format!("{}", correlation_id).into())
-				.with_reply_to(response_queue.name().clone())
-		).await.with_context(|| "error in basic_publish")?;
-		trace!("[remote_query][{}][{}] published message", name.as_ref(), correlation_id);
-
-		let mut result = None;
-
-		// FIXME: this timeout needs to be configurable
-		//  the timeout strongly depends on the latency between hosts, in my case ~250ms at most
-		let mut timeout = Duration::from_millis(2000);
-		let extension = Duration::from_millis(250);
-		let instant = Instant::now();
-
-		while let Ok(Some(Ok(delivery))) = consumer.next().timeout(timeout.saturating_sub(instant.elapsed())).await
-		{
-			let elapsed = instant.elapsed();
-			trace!("[remote_query][{}][{}] got response after {:.3}s", name.as_ref(), correlation_id, elapsed.as_secs_f64());
-
-			let received_id = match delivery.properties.correlation_id()
-			{
-				Some(received_id) => received_id,
-				None =>
-				{
-					info!("[remote_query][{}][{}] response without correlation_id; rejecting", name.as_ref(), correlation_id);
-					delivery.acker.reject(BasicRejectOptions
-					{
-						requeue: false,
-					}).await?;
-					continue;
-				},
-			};
-
-			let received_id = match Uuid::parse_str(received_id.as_str())
-			{
-				Ok(received_id) => received_id,
-				Err(_) =>
-				{
-					info!("[remote_query][{}][{}] response with invalid correlation_id: {}; rejecting", name.as_ref(), correlation_id, received_id);
-					delivery.acker.reject(BasicRejectOptions
-					{
-						requeue: false,
-					}).await?;
-					continue;
-				},
-			};
-
-			if received_id.ne(&correlation_id)
-			{
-				debug!("[remote_query][{}][{}] unrelated message received; rejecting", name.as_ref(), correlation_id);
-				delivery.acker.reject(BasicRejectOptions
-				{
-					requeue: false,
-				}).await?;
-				continue;
-			}
-
-			timeout = elapsed + (elapsed + 2*extension)/2;
-
-			if let Ok(addresses) = delivery.data.chunks(16)
-				.map(|v| Ok(Ipv6Addr::from(u128::from_le_bytes(v.to_vec().try_into()?))))
-				.collect::<std::result::Result<Vec<_>,Vec<_>>>()
-			{
-				debug!("[remote_query][{}][{}] got response after {:.3}s: {:?}", name.as_ref(), correlation_id, instant.elapsed().as_secs_f64(), addresses);
-				result.get_or_insert_with(Vec::new).extend(addresses);
-				delivery.acker.ack(BasicAckOptions
-				{
-					multiple: false,
-				}).await?;
-			}
-			else
-			{
-				debug!("[remote_query][{}][{}] invalid content; rejecting", name.as_ref(), correlation_id);
-				delivery.acker.reject(BasicRejectOptions
-				{
-					requeue: false,
-				}).await?;
-			}
-		}
-
-		Ok(result)
 	}
 }
 
