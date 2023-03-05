@@ -84,7 +84,8 @@ impl RemoteQueryTrait for RemoteQuery
 						{
 							Err(err) =>
 							{
-								warn!("[remote_query][{}] http error: {:?}", remote, err);
+								warn!("[remote_query][{}] http error: {}", remote, err);
+								debug!("[remote_query][{}] verbose http error: {:?}", remote, err);
 								None
 							},
 							Ok(response) =>
@@ -92,7 +93,7 @@ impl RemoteQueryTrait for RemoteQuery
 								let status = response.status();
 								if !status.is_success()
 								{
-									warn!("[remote_query][{}] unexpected http response code: {:?}", remote, status);
+									warn!("[remote_query][{}] unexpected http response code: {}", remote, status);
 									None
 								}
 								else
@@ -102,7 +103,8 @@ impl RemoteQueryTrait for RemoteQuery
 										Ok(response) => Some(response),
 										Err(err) =>
 										{
-											warn!("[remote_query][{}] json deserialization error: {:?}", remote, err);
+											warn!("[remote_query][{}] json deserialization error: {}", remote, err);
+											debug!("[remote_query][{}] verbose json deserialization error: {:?}", remote, err);
 											None
 										},
 									}
