@@ -36,6 +36,7 @@ struct Args
 enum Command
 {
 	/// Run the AMQP (e.g. RabbitMQ) responder, allowing container names on this host to resolve
+	#[clap(alias = "amqp-responder")]
 	Responder
 	{
 		/// Connection string for the message queue
@@ -52,6 +53,7 @@ enum Command
 	},
 
 	/// Run the AMQP remote backend via a stdio pipe for PowerDNS
+	#[clap(alias = "amqp-pipe")]
 	Pipe
 	{
 		/// Connection string for the message queue
@@ -68,6 +70,7 @@ enum Command
 	},
 
 	/// Run the AMQP remote backend via a Unix Domain Socket for PowerDNS
+	#[clap(alias = "amqp-unix")]
 	Unix
 	{
 		/// Connection string for the message queue
@@ -83,7 +86,7 @@ enum Command
 		domain: String,
 
 		/// Location of the unix domain socket to be created
-		#[clap(short, long, value_name = "SOCKET_PATH",  default_value = "/var/run/lxddns/lxddns.sock")]
+		#[clap(short, long, value_name = "SOCKET_PATH", default_value = "/var/run/lxddns/lxddns.sock")]
 		socket: String,
 
 		/// Number of parallel worker threads for unix domain socket connections (0: unlimited)

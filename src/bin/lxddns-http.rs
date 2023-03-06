@@ -36,7 +36,8 @@ struct Args
 enum Command
 {
 	/// Run the HTTP responder, allowing container names on this host to resolve
-	HttpResponder
+	#[clap(alias = "http-responder")]
+	Responder
 	{
 		/// Address-Port pair to bind to for incoming HTTPS traffic.
 		#[clap(short = 'b', long, value_name = "HTTP:PORT", default_value = "[::1]:9132", env = "LXDDNS_HTTP_BIND")]
@@ -52,7 +53,8 @@ enum Command
 	},
 
 	/// Run the HTTP remote backend via a stdio pipe for PowerDNS
-	HttpPipe
+	#[clap(alias = "http-pipe")]
+	Pipe
 	{
 		/// API root of remote instances.
 		///
@@ -70,7 +72,8 @@ enum Command
 	},
 
 	/// Run the HTTP remote backend via a Unix Domain Socket for PowerDNS
-	HttpUnix
+	#[clap(alias = "http-unix")]
+	Unix
 	{
 		/// API root of remote instances.
 		///
@@ -87,7 +90,7 @@ enum Command
 		domain: String,
 
 		/// Location of the unix domain socket to be created
-		#[clap(short, long, value_name = "SOCKET_PATH",  default_value = "/var/run/lxddns/lxddns.sock")]
+		#[clap(short, long, value_name = "SOCKET_PATH", default_value = "/var/run/lxddns/lxddns.sock")]
 		socket: String,
 
 		/// Number of parallel worker threads for unix domain socket connections (0: unlimited)
@@ -115,7 +118,7 @@ async fn main()
 
 	match args.command
 	{
-		Command::HttpPipe { remote, hostmaster, domain, } =>
+		Command::Pipe { remote, hostmaster, domain, } =>
 		{
 			let pipe = Pipe::builder()
 				.remote(remote)
@@ -138,7 +141,7 @@ async fn main()
 				},
 			}
 		},
-		Command::HttpResponder { https_bind, tls_chain, tls_key, } =>
+		Command::Responder { https_bind, tls_chain, tls_key, } =>
 		{
 			let responder = Responder::builder()
 				.https_bind(https_bind)
@@ -161,7 +164,7 @@ async fn main()
 				},
 			}
 		},
-		Command::HttpUnix { remote, domain, hostmaster, socket, unix_workers, } =>
+		Command::Unix { remote, domain, hostmaster, socket, unix_workers, } =>
 		{
 			let unix = Unix::builder()
 				.remote(remote)
