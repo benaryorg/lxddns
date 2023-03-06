@@ -134,7 +134,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 									{
 										Ok(json) =>
 										{
-											if let Err(err) = self.writer.write_all(format!("{}", json).as_bytes()).await
+											if let Err(err) = self.writer.write_all(format!("{}\n", json).as_bytes()).await
 											{
 												warn!("[pdns_io][handler][{}] closing unix stream due to socket error: {}", query.qname(), err);
 												break;
@@ -164,7 +164,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 							{
 								Ok(json) =>
 								{
-									if let Err(err) = self.writer.write_all(format!("{}", json).as_bytes()).await
+									if let Err(err) = self.writer.write_all(format!("{}\n", json).as_bytes()).await
 									{
 										warn!("[pdns_io][handler][{}] closing unix stream due to socket error: {}", query.qname(), err);
 										break;
@@ -181,7 +181,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 				},
 				Ok(Query::Initialize) =>
 				{
-					if let Err(err) = self.writer.write_all(format!("{}", json!({ "result": true })).as_bytes()).await
+					if let Err(err) = self.writer.write_all(format!("{}\n", json!({ "result": true })).as_bytes()).await
 					{
 						warn!("[pdns_io][handler] closing unix stream due to socket error: {}", err);
 						break;
@@ -190,7 +190,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 				Ok(Query::Unknown) =>
 				{
 					debug!("[pdns_io][handler] unknown query: {:?}", String::from_utf8_lossy(&input));
-					if let Err(err) = self.writer.write_all(format!("{}", json!({ "result": false })).as_bytes()).await
+					if let Err(err) = self.writer.write_all(format!("{}\n", json!({ "result": false })).as_bytes()).await
 					{
 						warn!("[pdns_io][handler] closing unix stream due to socket error: {}", err);
 						break;
@@ -201,6 +201,13 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 					warn!("[pdns_io][handler] error parsing request: {}", err);
 					break;
 				},
+			}
+
+			trace!("[pdns_io][handler] flushing");
+			if let Err(err) = self.writer.flush().await
+			{
+				warn!("[pdns_io][handler] closing unix stream due to socket error: {}", err);
+				break;
 			}
 		}
 		debug!("[pdns_io][handler] connection closed");
