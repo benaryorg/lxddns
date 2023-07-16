@@ -3,7 +3,7 @@ name = "lxddns"
 version = "4.0.2"
 authors = ["benaryorg <binary@benary.org>"]
 edition = "2018"
-license = "ISC"
+license = "AGPL-3.0-or-later"
 
 [lib]
 
