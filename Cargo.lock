@@ -1365,7 +1365,7 @@ dependencies = [
  "log",
  "regex_static",
  "reqwest",
- "rustls 0.21.7",
+ "rustls 0.20.9",
  "rustls-pemfile",
  "serde",
  "serde_json",
