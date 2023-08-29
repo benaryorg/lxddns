@@ -8,6 +8,10 @@
 use crate::
 {
 	error::*,
+	pdns::
+	{
+		TtlConfig,
+	},
 };
 
 use ::
@@ -30,6 +34,7 @@ pub struct Pipe
 {
 	domain: String,
 	hostmaster: String,
+	ttl_config: TtlConfig,
 	connection: Connection,
 }
 
@@ -48,7 +53,7 @@ impl Pipe
 		debug!("[pipe] channel created");
 
 		let backend = super::query::RemoteQuery::new(channel).await?;
-		let handler = crate::pdns_io::PdnsStreamHandler::new(self.domain, self.hostmaster, backend, stdin(), stdout()).await?;
+		let handler = crate::pdns_io::PdnsStreamHandler::new(self.domain, &self.ttl_config, self.hostmaster, backend, stdin(), stdout()).await?;
 		handler.run().await?;
 
 		debug!("[pipe] connection closed");
@@ -63,6 +68,7 @@ pub struct PipeBuilder
 	url: Option<String>,
 	domain: Option<String>,
 	hostmaster: Option<String>,
+	ttl_config: Option<TtlConfig>,
 }
 
 impl PipeBuilder
@@ -85,11 +91,18 @@ impl PipeBuilder
 		self
 	}
 
+	pub fn ttl_config(mut self, ttl_config: TtlConfig) -> Self
+	{
+		self.ttl_config = Some(ttl_config);
+		self
+	}
+
 	pub async fn run(self) -> Result<()>
 	{
 		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
 		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
 		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
+		let ttl_config = self.ttl_config.unwrap_or_default();
 
 		let connection = Connection::connect(url.as_ref(), Default::default())
 			.await
@@ -101,6 +114,7 @@ impl PipeBuilder
 		{
 			domain,
 			hostmaster,
+			ttl_config,
 			connection,
 		}.run().await
 	}

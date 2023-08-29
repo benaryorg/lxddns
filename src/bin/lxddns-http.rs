@@ -8,11 +8,18 @@
 #[rustfmt::skip]
 use ::
 {
-	lxddns::http::
+	lxddns::
 	{
-		Responder,
-		Pipe,
-		Unix,
+		http::
+		{
+			Responder,
+			Pipe,
+			Unix,
+		},
+		pdns::
+		{
+			TtlConfig,
+		},
 	},
 	clap::
 	{
@@ -76,6 +83,9 @@ enum Command
 		/// Domain under which to run (do not forget the trailing dot)
 		#[clap(short, long)]
 		domain: String,
+
+		#[command(flatten)]
+		ttl_config: TtlConfig,
 	},
 
 	/// Run the HTTP remote backend via a Unix Domain Socket for PowerDNS
@@ -103,6 +113,9 @@ enum Command
 		/// Number of parallel worker threads for unix domain socket connections (0: unlimited)
 		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
 		unix_workers: usize,
+
+		#[command(flatten)]
+		ttl_config: TtlConfig,
 	},
 }
 
@@ -125,11 +138,12 @@ async fn main()
 
 	match args.command
 	{
-		Command::Pipe { remote, hostmaster, domain, } =>
+		Command::Pipe { ttl_config, remote, hostmaster, domain, } =>
 		{
 			let pipe = Pipe::builder()
 				.remote(remote)
 				.domain(domain)
+				.ttl_config(ttl_config)
 				.hostmaster(hostmaster)
 			;
 
@@ -171,13 +185,14 @@ async fn main()
 				},
 			}
 		},
-		Command::Unix { remote, domain, hostmaster, socket, unix_workers, } =>
+		Command::Unix { ttl_config, remote, domain, hostmaster, socket, unix_workers, } =>
 		{
 			let unix = Unix::builder()
 				.remote(remote)
 				.domain(domain)
 				.hostmaster(hostmaster)
 				.unixpath(socket)
+				.ttl_config(ttl_config)
 				.unix_workers(unix_workers)
 			;
 

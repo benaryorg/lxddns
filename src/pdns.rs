@@ -22,6 +22,10 @@ use ::
 		Deserializer,
 		Serialize,
 	},
+	clap::
+	{
+		Args,
+	},
 	std::
 	{
 		net::
@@ -53,7 +57,7 @@ pub enum SmartResponse
 
 impl SmartResponse
 {
-	pub fn response<S: AsRef<str>>(self, qname: S, soa: &ResponseEntry, addresses: Option<Vec<Ipv6Addr>>) -> Response
+	pub fn response<S: AsRef<str>>(self, qname: S, ttl_config: &TtlConfig, soa: &ResponseEntry, addresses: Option<Vec<Ipv6Addr>>) -> Response
 	{
 		trace!("[smartresponse][{}] response", qname.as_ref());
 
@@ -68,14 +72,14 @@ impl SmartResponse
 					trace!("[smartresponse][{}][aaaa] has addresses, building response", qname.as_ref());
 
 					addresses.into_iter()
-						.map(|addr| ResponseEntry::aaaa(qname.as_ref(), addr))
+						.map(|addr| ResponseEntry::aaaa(qname.as_ref(), ttl_config, addr))
 						.collect::<Vec<_>>()
 						.into()
 				}
 				else
 				{
 					trace!("[smartresponse][{}][aaaa] sending nxdomain", qname.as_ref());
-					DumbResponse::Nxdomain.response(qname, soa)
+					DumbResponse::Nxdomain.response(qname, ttl_config, soa)
 				}
 			},
 		}
@@ -95,7 +99,7 @@ pub enum DumbResponse
 
 impl DumbResponse
 {
-	pub fn response<S: AsRef<str>>(self, qname: S, soa: &ResponseEntry) -> Response
+	pub fn response<S: AsRef<str>>(self, qname: S, ttl_config: &TtlConfig, soa: &ResponseEntry) -> Response
 	{
 		trace!("[dumbresponse][{}] responding", qname.as_ref());
 		match self
@@ -103,7 +107,7 @@ impl DumbResponse
 			DumbResponse::Acme { target, } =>
 			{
 				debug!("[dumbresponse][{}][acme] responding with {}", qname.as_ref(), target);
-				vec![ResponseEntry::ns(qname, target)].into()
+				vec![ResponseEntry::ns(qname, ttl_config, target)].into()
 			},
 			DumbResponse::Nxdomain =>
 			{
@@ -526,6 +530,34 @@ pub enum Query
 	Unknown,
 }
 
+/// DNS TTL related configuration options, used to generate DNS records
+#[derive(Clone,Eq,PartialEq,Hash,Debug,Args)]
+pub struct TtlConfig
+{
+	/// TTL for SOA records, aka NXDOMAIN caching.
+	#[clap(long, default_value = "64")]
+	soa_ttl: usize,
+	/// TTL for AAAA records, aka the container records.
+	#[clap(long, default_value = "128")]
+	aaaa_ttl: usize,
+	/// TTL for NS records, aka the ACME challenge records.
+	#[clap(long, default_value = "7200")]
+	ns_ttl: usize,
+}
+
+impl Default for TtlConfig
+{
+	fn default() -> Self
+	{
+		TtlConfig
+		{
+			soa_ttl: 64,
+			aaaa_ttl: 128,
+			ns_ttl: 7200,
+		}
+	}
+}
+
 #[derive(Getters,Serialize,Clone,Eq,PartialEq,Hash,Debug)]
 pub struct ResponseEntry
 {
@@ -542,38 +574,36 @@ pub struct ResponseEntry
 
 impl ResponseEntry
 {
-	pub fn soa<D: AsRef<str>, H: AsRef<str>>(domain: D, hostmaster: H) -> Self
+	pub fn soa<D: AsRef<str>, H: AsRef<str>>(domain: D, ttl: &TtlConfig, hostmaster: H) -> Self
 	{
 		ResponseEntry
 		{
 			content: format!("{} {} 1 86400 7200 3600000 3600", domain.as_ref(), hostmaster.as_ref()),
 			qtype: "SOA".to_string(),
 			qname: domain.as_ref().to_string(),
-			// FIXME: this ttl needs to be configurable
-			ttl: 256,
+			ttl: ttl.soa_ttl,
 		}
 	}
 
-	pub fn ns<D: AsRef<str>, H: AsRef<str>>(domain: D, target: H) -> Self
+	pub fn ns<D: AsRef<str>, H: AsRef<str>>(domain: D, ttl: &TtlConfig, target: H) -> Self
 	{
 		ResponseEntry
 		{
 			content: target.as_ref().to_string(),
 			qtype: "NS".to_string(),
 			qname: domain.as_ref().to_string(),
-			ttl: 7200,
+			ttl: ttl.ns_ttl,
 		}
 	}
 
-	pub fn aaaa<D: AsRef<str>>(domain: D, addr: Ipv6Addr) -> Self
+	pub fn aaaa<D: AsRef<str>>(domain: D, ttl: &TtlConfig, addr: Ipv6Addr) -> Self
 	{
 		ResponseEntry
 		{
 			content: format!("{}", addr),
 			qtype: "AAAA".to_string(),
 			qname: domain.as_ref().to_string(),
-			// FIXME: this ttl needs to be configurable
-			ttl: 128,
+			ttl: ttl.aaaa_ttl,
 		}
 	}
 }

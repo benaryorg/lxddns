@@ -8,11 +8,18 @@
 #[rustfmt::skip]
 use ::
 {
-	lxddns::amqp::
+	lxddns::
 	{
-		Responder,
-		Pipe,
-		Unix,
+		amqp::
+		{
+			Responder,
+			Pipe,
+			Unix,
+		},
+		pdns::
+		{
+			TtlConfig,
+		},
 	},
 	clap::
 	{
@@ -74,6 +81,9 @@ enum Command
 		/// Domain under which to run (do not forget the trailing dot)
 		#[clap(short, long)]
 		domain: String,
+
+		#[command(flatten)]
+		ttl_config: TtlConfig,
 	},
 
 	/// Run the AMQP remote backend via a Unix Domain Socket for PowerDNS
@@ -99,6 +109,9 @@ enum Command
 		/// Number of parallel worker threads for unix domain socket connections (0: unlimited)
 		#[clap(long, value_name = "THREAD_COUNT", default_value = "2")]
 		unix_workers: usize,
+
+		#[command(flatten)]
+		ttl_config: TtlConfig,
 	},
 }
 
@@ -121,11 +134,12 @@ async fn main()
 
 	match args.command
 	{
-		Command::Pipe { url, domain, hostmaster, } =>
+		Command::Pipe { url, ttl_config, domain, hostmaster, } =>
 		{
 			let pipe = Pipe::builder()
 				.url(url)
 				.domain(domain)
+				.ttl_config(ttl_config)
 				.hostmaster(hostmaster)
 			;
 
@@ -144,13 +158,14 @@ async fn main()
 				},
 			}
 		},
-		Command::Unix { url, domain, hostmaster, socket, unix_workers, } =>
+		Command::Unix { url, ttl_config, domain, hostmaster, socket, unix_workers, } =>
 		{
 			let unix = Unix::builder()
 				.url(url)
 				.domain(domain)
 				.hostmaster(hostmaster)
 				.unixpath(socket)
+				.ttl_config(ttl_config)
 				.unix_workers(unix_workers)
 			;
 

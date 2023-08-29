@@ -17,6 +17,7 @@ use crate::
 		LookupType,
 		Query,
 		ResponseEntry,
+		TtlConfig,
 	},
 };
 
@@ -65,6 +66,7 @@ pub struct PdnsStreamHandler<R, W, B>
 {
 	domain: String,
 	hostmaster: String,
+	ttl_config: TtlConfig,
 	backend: B,
 	reader: R,
 	writer: W,
@@ -76,7 +78,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 		W: AsyncWrite+Unpin,
 		B: RemoteQuery,
 {
-	pub async fn new<S1, S2>(domain: S1, hostmaster: S2, backend: B, reader: R, writer: W) -> Result<Self>
+	pub async fn new<S1, S2>(domain: S1, ttl_config: &TtlConfig, hostmaster: S2, backend: B, reader: R, writer: W) -> Result<Self>
 		where
 			S1: AsRef<str>,
 			S2: AsRef<str>,
@@ -85,6 +87,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 		{
 			domain: domain.as_ref().to_string(),
 			hostmaster: hostmaster.as_ref().to_string(),
+			ttl_config: ttl_config.clone(),
 			backend,
 			reader,
 			writer,
@@ -93,7 +96,8 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 
 	pub async fn run(mut self) -> Result<()>
 	{
-		let soa_record = &ResponseEntry::soa(&self.domain, &self.hostmaster);
+		let soa_record = &ResponseEntry::soa(&self.domain, &self.ttl_config, &self.hostmaster);
+		let ttl_config = &self.ttl_config;
 
 		debug!("[pdns_io][handler] handling stream with queue {}", self.backend.name());
 
@@ -135,7 +139,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 								{
 									debug!("[pdns_io][handler][{}] got {:?}", query.qname(), result);
 
-									let response = response.response(query.qname(), soa_record, result);
+									let response = response.response(query.qname(), ttl_config, soa_record, result);
 
 									match serde_json::to_string(&response)
 									{
@@ -165,7 +169,7 @@ impl<R, W, B> PdnsStreamHandler<R, W, B>
 						{
 							debug!("[pdns_io][handler][{}] dumb response", query.qname());
 
-							let response = response.response(query.qname(), soa_record);
+							let response = response.response(query.qname(), ttl_config, soa_record);
 
 							match serde_json::to_string(&response)
 							{

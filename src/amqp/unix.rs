@@ -8,6 +8,10 @@
 use crate::
 {
 	error::*,
+	pdns::
+	{
+		TtlConfig,
+	},
 };
 
 use ::
@@ -41,6 +45,7 @@ pub struct Unix
 {
 	domain: String,
 	hostmaster: String,
+	ttl_config: TtlConfig,
 	connection: Connection,
 	unixpath: String,
 	unix_workers: usize,
@@ -95,7 +100,7 @@ impl Unix
 
 				let backend = super::query::RemoteQuery::new(channel).await?;
 				let (read, write) = stream.into_split();
-				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.hostmaster, backend, read, write).await?;
+				let handler = crate::pdns_io::PdnsStreamHandler::new(&me.domain, &me.ttl_config, &me.hostmaster, backend, read, write).await?;
 				handler.run().await?;
 
 				debug!("[unix] connection closed");
@@ -117,6 +122,7 @@ pub struct UnixBuilder
 	domain: Option<String>,
 	hostmaster: Option<String>,
 	unixpath: Option<String>,
+	ttl_config: Option<TtlConfig>,
 	unix_workers: Option<usize>,
 }
 
@@ -146,6 +152,12 @@ impl UnixBuilder
 		self
 	}
 
+	pub fn ttl_config(mut self, ttl_config: TtlConfig) -> Self
+	{
+		self.ttl_config = Some(ttl_config);
+		self
+	}
+
 	pub fn unix_workers(mut self, unix_workers: usize) -> Self
 	{
 		self.unix_workers = Some(unix_workers);
@@ -158,6 +170,7 @@ impl UnixBuilder
 		let domain = self.domain.map(Result::Ok).unwrap_or_else(|| bail!("no domain provided")).context(Error::InvalidConfiguration)?;
 		let hostmaster = self.hostmaster.map(Result::Ok).unwrap_or_else(|| bail!("no hostmaster provided")).context(Error::InvalidConfiguration)?;
 		let unixpath = self.unixpath.map(Result::Ok).unwrap_or_else(|| bail!("no unixpath provided")).context(Error::InvalidConfiguration)?;
+		let ttl_config = self.ttl_config.unwrap_or_default();
 		let unix_workers = self.unix_workers.unwrap_or(0);
 
 		let connection = Connection::connect(url.as_ref(), Default::default())
@@ -170,6 +183,7 @@ impl UnixBuilder
 		{
 			domain,
 			hostmaster,
+			ttl_config,
 			connection,
 			unixpath,
 			unix_workers,
