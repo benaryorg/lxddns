@@ -1,0 +1,25 @@
+{
+  "enabled": 3,
+  "hidden": false,
+  "description": "lxddns repository job genaration.",
+  "nixexprinput": "infra",
+  "nixexprpath": ".hydra/jobsets.nix",
+  "checkinterval": 15,
+  "schedulingshares": 100,
+  "enableemail": false,
+  "emailoverride": "",
+  "keepnr": 3,
+  "type": 0,
+  "inputs": {
+    "infra": {
+      "value": "https://git.shell.bsocat.net/lxddns.git main",
+      "type": "git",
+      "emailresponsible": false
+    },
+    "refs": {
+      "type": "path",
+      "value": "https://git.shell.bsocat.net/lxddns.git/info/refs",
+      "emailresponsible": false
+    }
+  }
+}
