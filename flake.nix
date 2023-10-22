@@ -28,6 +28,21 @@
             default = pkgs.lxddns;
           }
       );
+    checks = flake-utils.lib.eachDefaultSystem (system:
+        let
+          # pkgs for current system
+          pkgs = import nixpkgs
+          {
+            inherit system;
+            overlays = [ self.overlays.default ];
+          };
+        in
+          {
+            lxddns = pkgs.lxddns;
+            lxddns-http = pkgs.lxddns-http;
+            lxddns-amqp = pkgs.lxddns-amqp;
+          }
+      );
     nixosModules = rec
     {
       lxddns = ./module.nix;
