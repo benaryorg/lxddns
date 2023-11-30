@@ -53,11 +53,18 @@
       lxddns = final: prev:
         let
           lxddns = prev.callPackage ./package.nix {};
+          featureOverrideAttrs = features:
+          {
+            cargoBuildNoDefaultFeatures = true;
+            cargoBuildFeatures = features;
+            cargoCheckNoDefaultFeatures = true;
+            cargoCheckFeatures = features;
+          };
         in
           {
             lxddns = lxddns;
-            lxddns-http = lxddns.overrideAttrs { cargoBuildNoDefaultFeatures = true; cargoBuildFeatures = [ "http" ]; };
-            lxddns-amqp = lxddns.overrideAttrs { cargoBuildNoDefaultFeatures = true; cargoBuildFeatures = [ "amqp" ]; };
+            lxddns-http = lxddns.overrideAttrs (featureOverrideAttrs [ "http" ]);
+            lxddns-amqp = lxddns.overrideAttrs (featureOverrideAttrs [ "amqp" ]);
           };
       default = lxddns;
     };
