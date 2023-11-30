@@ -56,8 +56,8 @@
         in
           {
             lxddns = lxddns;
-            lxddns-http = lxddns.overrideAttrs { buildNoDefaultFeatures = true; buildFeatures = [ "http" ]; };
-            lxddns-amqp = lxddns.overrideAttrs { buildNoDefaultFeatures = true; buildFeatures = [ "amqp" ]; };
+            lxddns-http = lxddns.overrideAttrs { cargoBuildNoDefaultFeatures = true; cargoBuildFeatures = [ "http" ]; };
+            lxddns-amqp = lxddns.overrideAttrs { cargoBuildNoDefaultFeatures = true; cargoBuildFeatures = [ "amqp" ]; };
           };
       default = lxddns;
     };
