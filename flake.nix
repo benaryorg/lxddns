@@ -6,11 +6,13 @@
     # please override these inputs when using the flake and point them to
     #  1. the version you're using
     #  2. ideally your non-GitHub mirror
-    nixpkgs.url = "nixpkgs/nixos-23.05";
-    flake-utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "git+https://git.shell.bsocat.net/nixpkgs?ref=nixos-23.11";
+    systems.url = "git+https://git.shell.bsocat.net/nix-systems";
+    flake-utils.url = "git+https://git.shell.bsocat.net/flake-utils";
+    flake-utils.inputs.systems.follows = "systems";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, ... }:
   {
     packages = flake-utils.lib.eachDefaultSystem (system:
         let
