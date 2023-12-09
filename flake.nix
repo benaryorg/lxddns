@@ -7,7 +7,7 @@
     #  1. the version you're using
     #  2. ideally your non-GitHub mirror
     nixpkgs.url = "git+https://git.shell.bsocat.net/nixpkgs?ref=nixos-23.11";
-    systems.url = "git+https://git.shell.bsocat.net/nix-systems";
+    systems.url = "git+https://git.shell.bsocat.net/nix-systems-default-linux";
     flake-utils.url = "git+https://git.shell.bsocat.net/flake-utils";
     flake-utils.inputs.systems.follows = "systems";
   };
