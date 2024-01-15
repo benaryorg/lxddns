@@ -135,7 +135,8 @@
             };
             tls-cert = lib.mkOption
             {
-              default = "/var/lib/acme/${config.networking.fqdn}/fullchain.pem";
+              default = "/var/lib/acme/${config.networking.fqdnOrHostName}/fullchain.pem";
+              defaultText = lib.mdDoc "`/var/lib/acme/\${config.networking.fqdnOrHostName}/fullchain.pem`";
               type = lib.types.str;
               description = lib.mdDoc
               ''
@@ -148,7 +149,8 @@
             };
             tls-key = lib.mkOption
             {
-              default = "/var/lib/acme/${config.networking.fqdn}/key.pem";
+              default = "/var/lib/acme/${config.networking.fqdnOrHostName}/key.pem";
+              defaultText = lib.mdDoc "`/var/lib/acme/\${config.networking.fqdnOrHostName}/key.pem`";
               type = lib.types.str;
               description = lib.mdDoc
               ''
