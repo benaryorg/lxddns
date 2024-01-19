@@ -92,7 +92,7 @@ impl Responder
 				App::new()
 					.service(resolve)
 			})
-			.bind_rustls(self.https_bind, self.tls_config)?
+			.bind_rustls_021(self.https_bind, self.tls_config)?
 			.run()
 			.await?;
 

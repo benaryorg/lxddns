@@ -12,7 +12,7 @@ license = "AGPL-3.0-or-later"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = { version = "^4.3", features = ["rustls"], optional = true }
+actix-web = { version = "^4.3", features = ["rustls-0_21"], optional = true }
 anyhow = "^1.0"
 async-trait = "^0.1.64"
 clap = { version = "^4.0", features = ["derive", "env"] }
@@ -23,10 +23,8 @@ lapin = { version = "^2.1", optional = true }
 log = "^0.4.17"
 regex_static = "^0.1.1"
 reqwest = { version = "^0.11.14", features = ["rustls-tls-native-roots", "rustls", "json"], default-features = false, optional = true }
-# version 0.21 blocked by upstream
-#  tokio-rustls v0.24.0: fixed
-#  actix-tls v3.0.3: requires tokio-rustls v0.23
-rustls = { version = "^0.20.8", optional = true }
+# version 0.22 blocked by upstream (see actix-web features)
+rustls = { version = "^0.21.0", optional = true }
 rustls-pemfile = { version = "^1.0", optional = true }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
