@@ -145,19 +145,20 @@ impl ResponderBuilder
 
 		// convert files to key/cert objects
 		let tls_chain = certs(tls_chain)
-			.unwrap()
-			.into_iter()
-			.map(Certificate)
-			.collect();
+			.map(|res| Ok(Certificate(res?.to_vec())))
+			.collect::<Result<_>>()
+			.context("cannot load certificate chain")?;
 
 		let tls_key = read_all(tls_key)
-			.unwrap()
-			.into_iter()
+		  .map(|res| Ok(res?))
+		  .collect::<Result<Vec<_>>>()
+		  .context("cannot load private key")?
+		  .into_iter()
 			.filter_map(|item| match item
 			{
-				Item::RSAKey(key) => Some(PrivateKey(key)),
-				Item::PKCS8Key(key) => Some(PrivateKey(key)),
-				Item::ECKey(key) => Some(PrivateKey(key)),
+				Item::Pkcs1Key(key) => Some(PrivateKey(key.secret_pkcs1_der().into())),
+				Item::Pkcs8Key(key) => Some(PrivateKey(key.secret_pkcs8_der().into())),
+				Item::Sec1Key(key) => Some(PrivateKey(key.secret_sec1_der().into())),
 				_ => None,
 			})
 			.next()

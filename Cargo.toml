@@ -25,7 +25,7 @@ regex_static = "^0.1.1"
 reqwest = { version = "^0.11.14", features = ["rustls-tls-native-roots", "rustls", "json"], default-features = false, optional = true }
 # version 0.22 blocked by upstream (see actix-web features)
 rustls = { version = "^0.21.0", optional = true }
-rustls-pemfile = { version = "^1.0", optional = true }
+rustls-pemfile = { version = "^2.0", optional = true }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
 thiserror = "^1.0"
