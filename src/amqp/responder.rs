@@ -51,6 +51,7 @@ use ::
 
 pub struct Responder
 {
+	command: String,
 	connection: Connection,
 	queue_name: String,
 	responder_workers: usize,
@@ -141,7 +142,7 @@ impl Responder
 					}
 				};
 
-				let addresses = match crate::lxd::local_query(&name).await
+				let addresses = match crate::lxd::local_query(&me.command, &name).await
 				{
 					Ok(Some(addresses)) =>
 					{
@@ -196,14 +197,20 @@ impl Responder
 #[derive(Clone,Eq,PartialEq,Hash,Debug,Default)]
 pub struct ResponderBuilder
 {
+	command: Option<String>,
 	url: Option<String>,
 	queue_name: Option<String>,
 	responder_workers: Option<usize>,
-
 }
 
 impl ResponderBuilder
 {
+	pub fn command<S: AsRef<str>>(mut self, command: S) -> Self
+	{
+		self.command = Some(command.as_ref().into());
+		self
+	}
+
 	pub fn url<S: AsRef<str>>(mut self, url: S) -> Self
 	{
 		self.url = Some(url.as_ref().into());
@@ -224,6 +231,7 @@ impl ResponderBuilder
 
 	pub async fn run(self) -> Result<()>
 	{
+		let command = self.command.map(Result::Ok).unwrap_or_else(|| bail!("no command provided")).context(Error::InvalidConfiguration)?;
 		let url = self.url.map(Result::Ok).unwrap_or_else(|| bail!("no url provided")).context(Error::InvalidConfiguration)?;
 		let queue_name = self.queue_name.unwrap_or_default();
 		let responder_workers = self.responder_workers.unwrap_or(8);
@@ -238,6 +246,7 @@ impl ResponderBuilder
 
 		Responder
 		{
+			command,
 			connection,
 			queue_name,
 			responder_workers,

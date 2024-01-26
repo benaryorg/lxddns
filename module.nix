@@ -81,6 +81,17 @@
               May improve performance through disk IO reduction.
             '';
           };
+          virt-command = lib.mkOption
+          {
+            default = "${pkgs.lxd}/bin/lxc";
+            defaultText = lib.literalExpression "\${pkgs.lxd}/bin/lxc";
+            type = lib.types.str;
+            description = lib.mdDoc
+            ''
+              Command used passed to `--command` option of *lxddns*.
+              This ensures compatibility with differing software such as Incus and LXD.
+            '';
+          };
           binary = lib.mkOption
           {
             default = defaultBinary.${cfg.protocol};
@@ -101,6 +112,16 @@
               Arguments used in systemd service.
               This is mainly useful if you chose `none` as the `protocol`.
               Use `extraArgs` otherwise.
+            '';
+          };
+          dependentArgs = lib.mkOption
+          {
+            default = [ "--command" cfg.virt-command ];
+            defaultText = lib.literalExpression ''[ "--command" cfg.virt-command ]'';
+            type = lib.types.listOf lib.types.str;
+            description = lib.mdDoc
+            ''
+              Dependent arguments passed to the systemd service conditionally.
             '';
           };
           extraArgs = lib.mkOption
@@ -183,7 +204,7 @@
               };
               serviceConfig =
               {
-                ExecStart = "${cfg.package}/bin/${cfg.binary} ${toString cfg.args} ${toString cfg.extraArgs}";
+                ExecStart = "${cfg.package}/bin/${cfg.binary} ${toString cfg.args} ${toString cfg.dependentArgs} ${toString cfg.extraArgs}";
                 User = cfg.user;
                 Group = cfg.group;
                 LoadCredential =
@@ -207,7 +228,7 @@
                 users = [ cfg.user ];
                 commands =
                 [
-                  { command = "${pkgs.lxd}/bin/lxc query -- *"; options = [ "NOPASSWD" ]; }
+                  { command = "${cfg.virt-command} query -- *"; options = [ "NOPASSWD" ]; }
                 ];
               }
             ];

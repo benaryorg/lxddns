@@ -53,6 +53,10 @@ enum Command
 	#[clap(alias = "amqp-responder")]
 	Responder
 	{
+		/// Command name for querying. Set to "incus" if you're running Incus.
+		#[clap(short, long, value_name = "COMMAND", default_value = "lxc")]
+		command: String,
+
 		/// Connection string for the message queue
 		#[clap(short, long, value_name = "AMQP_URL", default_value = "amqp://guest:guest@[::1]:5672", env = "LXDDNS_URL")]
 		url: String,
@@ -184,9 +188,10 @@ async fn main()
 				},
 			}
 		},
-		Command::Responder { url, queue_name, responder_workers, } =>
+		Command::Responder { command, url, queue_name, responder_workers, } =>
 		{
 			let responder = Responder::builder()
+				.command(command)
 				.url(url)
 				.queue_name(queue_name.unwrap_or_default())
 				.responder_workers(responder_workers)

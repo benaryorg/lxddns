@@ -184,11 +184,11 @@ impl FromStr for ContainerName
 }
 
 /// Queries the local LXD instance.
-/// The local instance is queried by executing an `lxc query` command with *sudo*.
+/// The local instance is queried by executing an `lxc query` command with *sudo*, where `lxc` is the passed command.
 ///
 /// Values returned are either `Err` if querying failed, `Ok(None)` if the instance was not found locally, or `Ok(vec![])` if the instance was found.
 /// The last case includes instances without addresses assigned.
-pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
+pub async fn local_query(command: &String, name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 {
 	trace!("[local_query][{}] starting query", name.as_ref());
 
@@ -199,7 +199,7 @@ pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 	trace!("[local_query][{}] getting instance list", name.as_ref());
 	// first get the list of instances
 	let output = Command::new("sudo")
-		.arg("lxc")
+		.arg(command)
 		.arg("query")
 		.arg("--")
 		.arg("/1.0/instances")
@@ -289,7 +289,7 @@ pub async fn local_query(name: &ContainerName) -> Result<Option<Vec<Ipv6Addr>>>
 
 	trace!("[local_query][{}] querying state", name.as_ref());
 	let output = Command::new("sudo")
-		.arg("lxc")
+		.arg(command)
 		.arg("query")
 		.arg("--")
 		.arg(format!("/1.0/instances/{}/state", instance))

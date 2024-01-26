@@ -53,6 +53,10 @@ enum Command
 	#[clap(alias = "http-responder")]
 	Responder
 	{
+		/// Command name for querying. Set to "incus" if you're running Incus.
+		#[clap(short, long, value_name = "COMMAND", default_value = "lxc")]
+		command: String,
+
 		/// Address-Port pair to bind to for incoming HTTPS traffic.
 		#[clap(short = 'b', long, value_name = "HTTP:PORT", default_value = "[::1]:9132", env = "LXDDNS_HTTP_BIND")]
 		https_bind: String,
@@ -162,9 +166,10 @@ async fn main()
 				},
 			}
 		},
-		Command::Responder { https_bind, tls_chain, tls_key, } =>
+		Command::Responder { command, https_bind, tls_chain, tls_key, } =>
 		{
 			let responder = Responder::builder()
+				.command(command)
 				.https_bind(https_bind)
 				.tls_chain(tls_chain)
 				.tls_key(tls_key)
