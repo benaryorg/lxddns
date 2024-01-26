@@ -150,10 +150,10 @@ impl ResponderBuilder
 			.context("cannot load certificate chain")?;
 
 		let tls_key = read_all(tls_key)
-		  .map(|res| Ok(res?))
-		  .collect::<Result<Vec<_>>>()
-		  .context("cannot load private key")?
-		  .into_iter()
+			.map(|res| Ok(res?))
+			.collect::<Result<Vec<_>>>()
+			.context("cannot load private key")?
+			.into_iter()
 			.filter_map(|item| match item
 			{
 				Item::Pkcs1Key(key) => Some(PrivateKey(key.secret_pkcs1_der().into())),
