@@ -16,7 +16,7 @@ actix-web = { version = "^4.3", features = ["rustls-0_21"], optional = true }
 anyhow = "^1.0"
 async-trait = "^0.1.64"
 clap = { version = "^4.0", features = ["derive", "env"] }
-env_logger = { version = "^0.10", features = ["color", "auto-color"] }
+env_logger = { version = "^0.11", features = ["color", "auto-color"] }
 futures = "^0.3.25"
 getset = "^0.1.2"
 lapin = { version = "^2.1", optional = true }
