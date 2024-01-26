@@ -13,62 +13,53 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, ... }:
-  {
-    packages = flake-utils.lib.eachDefaultSystem (system:
-        let
-          # pkgs for current system
-          pkgs = import nixpkgs
-          {
-            inherit system;
-            overlays = [ self.overlays.default ];
-          };
-        in
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        # pkgs for current system
+        pkgs = nixpkgs.legacyPackages.${system}.extend self.overlays.default;
+      in
+        {
+          packages =
           {
             lxddns = pkgs.lxddns;
             lxddns-http = pkgs.lxddns-http;
             lxddns-amqp = pkgs.lxddns-amqp;
             default = pkgs.lxddns;
-          }
-      );
-    checks = flake-utils.lib.eachDefaultSystem (system:
-        let
-          # pkgs for current system
-          pkgs = import nixpkgs
-          {
-            inherit system;
-            overlays = [ self.overlays.default ];
           };
-        in
+          checks =
           {
             lxddns = pkgs.lxddns;
             lxddns-http = pkgs.lxddns-http;
             lxddns-amqp = pkgs.lxddns-amqp;
-          }
-      );
-    nixosModules = rec
+          };
+        }
+    )
+    //
     {
-      lxddns = ./module.nix;
-      default = lxddns;
-    };
-    overlays = rec
-    {
-      lxddns = final: prev:
-        let
+      nixosModules = rec
+      {
+        lxddns = ./module.nix;
+        default = lxddns;
+      };
+      overlays = rec
+      {
+        lxddns = final: prev:
+          let
           lxddns = prev.callPackage ./package.nix {};
-          featureOverrideAttrs = features:
-          {
-            cargoBuildNoDefaultFeatures = true;
-            cargoBuildFeatures = features;
-            cargoCheckNoDefaultFeatures = true;
-            cargoCheckFeatures = features;
-          };
+        featureOverrideAttrs = features:
+        {
+          cargoBuildNoDefaultFeatures = true;
+          cargoBuildFeatures = features;
+          cargoCheckNoDefaultFeatures = true;
+          cargoCheckFeatures = features;
+        };
         in
-          {
-            lxddns = lxddns;
-            lxddns-http = lxddns.overrideAttrs (featureOverrideAttrs [ "http" ]);
-            lxddns-amqp = lxddns.overrideAttrs (featureOverrideAttrs [ "amqp" ]);
-          };
-      default = lxddns;
+        {
+          lxddns = lxddns;
+          lxddns-http = lxddns.overrideAttrs (featureOverrideAttrs [ "http" ]);
+          lxddns-amqp = lxddns.overrideAttrs (featureOverrideAttrs [ "amqp" ]);
+        };
+        default = lxddns;
+      };
     };
-  };
 }
