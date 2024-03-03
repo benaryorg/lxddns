@@ -197,7 +197,7 @@
               enable = true;
               description = "lxddns responder";
               # requires sudo and lxd
-              path = [ "/run/wrappers" pkgs.lxd ];
+              path = [ "/run/wrappers" ];
               unitConfig =
               {
                 Type = "simple";
