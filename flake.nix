@@ -61,5 +61,18 @@
         };
         default = lxddns;
       };
+      hydraJobs =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          srcdir = ./.;
+        in
+          {
+            inherit (self) packages;
+            lint =
+            {
+              deadnix = pkgs.runCommand "lxddns-deadnix" {} "${pkgs.deadnix}/bin/deadnix --fail -- ${srcdir} | tee /dev/stderr > $out";
+              statix = pkgs.runCommand "lxddns-statix" {} "${pkgs.statix}/bin/statix check --config ${srcdir}/statix.toml -- ${srcdir} | tee /dev/stderr > $out";
+            };
+          };
     };
 }
