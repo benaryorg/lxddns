@@ -57,6 +57,10 @@ enum Command
 		#[clap(short, long, value_name = "COMMAND", default_value = "lxc")]
 		command: String,
 
+		/// Maximum number of connections per worker. Additional connections will hang on accept until a connection is freed up.
+		#[clap(short = 'm', long, value_name = "MAX_CONNS", default_value = "32")]
+		max_connections: usize,
+
 		/// Address-Port pair to bind to for incoming HTTPS traffic.
 		#[clap(short = 'b', long, value_name = "HTTP:PORT", default_value = "[::1]:9132", env = "LXDDNS_HTTP_BIND")]
 		https_bind: String,
@@ -166,10 +170,11 @@ async fn main()
 				},
 			}
 		},
-		Command::Responder { command, https_bind, tls_chain, tls_key, } =>
+		Command::Responder { command, https_bind, tls_chain, tls_key, max_connections, } =>
 		{
 			let responder = Responder::builder()
 				.command(command)
+				.max_connections(max_connections)
 				.https_bind(https_bind)
 				.tls_chain(tls_chain)
 				.tls_key(tls_key)

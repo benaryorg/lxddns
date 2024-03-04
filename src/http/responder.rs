@@ -82,6 +82,7 @@ pub struct ResponderConfig
 pub struct Responder
 {
 	config: ResponderConfig,
+	max_connections: usize,
 	https_bind: String,
 	tls_config: ServerConfig,
 }
@@ -105,6 +106,7 @@ impl Responder
 					.app_data(web::Data::new(config.clone()))
 					.service(resolve)
 			})
+			.max_connections(self.max_connections)
 			.bind_rustls_021(self.https_bind, self.tls_config)?
 			.run()
 			.await?;
@@ -119,6 +121,7 @@ impl Responder
 pub struct ResponderBuilder
 {
 	command: Option<String>,
+	max_connections: Option<usize>,
 	https_bind: Option<String>,
 	tls_key: Option<String>,
 	tls_chain: Option<String>,
@@ -129,6 +132,12 @@ impl ResponderBuilder
 	pub fn command<S: AsRef<str>>(mut self, command: S) -> Self
 	{
 		self.command = Some(command.as_ref().into());
+		self
+	}
+
+	pub fn max_connections(mut self, max_connections: usize) -> Self
+	{
+		self.max_connections = Some(max_connections);
 		self
 	}
 
@@ -153,6 +162,7 @@ impl ResponderBuilder
 	pub async fn run(self) -> Result<()>
 	{
 		let command = self.command.map(Result::Ok).unwrap_or_else(|| bail!("no command provided")).context(Error::InvalidConfiguration)?;
+		let max_connections = self.max_connections.map(Result::Ok).unwrap_or_else(|| bail!("no max_connections provided")).context(Error::InvalidConfiguration)?;
 		let https_bind = self.https_bind.map(Result::Ok).unwrap_or_else(|| bail!("no https_bind provided")).context(Error::InvalidConfiguration)?;
 		let tls_key = self.tls_key.map(Result::Ok).unwrap_or_else(|| bail!("no tls_key provided")).context(Error::InvalidConfiguration)?;
 		let tls_chain = self.tls_chain.map(Result::Ok).unwrap_or_else(|| bail!("no tls_chain provided")).context(Error::InvalidConfiguration)?;
@@ -201,8 +211,9 @@ impl ResponderBuilder
 			{
 				command,
 			},
-			tls_config,
+			max_connections,
 			https_bind,
+			tls_config,
 		}.run().await?;
 		Ok(())
 	}
