@@ -43,7 +43,7 @@
       };
       overlays = rec
       {
-        lxddns = final: prev:
+        lxddns = _final: prev:
           let
           lxddns = prev.callPackage ./package.nix {};
         featureOverrideAttrs = features:

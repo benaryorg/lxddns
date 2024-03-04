@@ -1,0 +1,6 @@
+nix_version = '2.4'
+disabled = [
+	"manual_inherit_from",
+	"manual_inherit",
+	"repeated_keys",
+]

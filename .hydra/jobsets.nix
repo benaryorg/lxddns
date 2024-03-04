@@ -38,7 +38,6 @@
     in
       {
         jobsets =
-        (
             (builtins.derivation
             {
               system = builtins.currentSystem;
@@ -65,5 +64,5 @@
                 maintainers = [ { email = "root@benary.org"; } ];
               };
             }
-        );
+        ;
       }
