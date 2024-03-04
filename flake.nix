@@ -46,19 +46,21 @@
         lxddns = _final: prev:
           let
           lxddns = prev.callPackage ./package.nix {};
-        featureOverrideAttrs = features:
-        {
-          cargoBuildNoDefaultFeatures = true;
-          cargoBuildFeatures = features;
-          cargoCheckNoDefaultFeatures = true;
-          cargoCheckFeatures = features;
-        };
+          genOverride = { features ? [], mainProgram ? "lxddns" }: { meta ? {}, ... }:
+          {
+            cargoBuildNoDefaultFeatures = features != [];
+            cargoBuildFeatures = features;
+            cargoCheckNoDefaultFeatures = features != [];
+            cargoCheckFeatures = features;
+            meta = meta // { inherit mainProgram; };
+          };
+          genOverrideShort = type: genOverride { features = [ type ]; mainProgram = "lxddns-${type}"; };
         in
-        {
-          lxddns = lxddns;
-          lxddns-http = lxddns.overrideAttrs (featureOverrideAttrs [ "http" ]);
-          lxddns-amqp = lxddns.overrideAttrs (featureOverrideAttrs [ "amqp" ]);
-        };
+          {
+            lxddns = lxddns;
+            lxddns-http = lxddns.overrideAttrs (genOverrideShort "http");
+            lxddns-amqp = lxddns.overrideAttrs (genOverrideShort "amqp");
+          };
         default = lxddns;
       };
       hydraJobs =
