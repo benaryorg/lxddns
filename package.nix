@@ -1,4 +1,4 @@
-{ lib, stdenv, nix, rustPlatform }:
+{ lib, linkFarm, nix, rustPlatform }:
   let
     toml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
   in
@@ -7,7 +7,13 @@
       pname = toml.package.name;
       version = toml.package.version;
 
-      src = ./.;
+      src = linkFarm "lxddns-${version}-src"
+      [
+        { name = "src"; path = ./src; }
+        { name = "Cargo.toml"; path = ./Cargo.toml; }
+        { name = "Cargo.lock"; path = ./Cargo.lock; }
+        { name = "COPYING"; path = "COPYING"; }
+      ];
 
       cargoLock.lockFile = ./Cargo.lock;
 
