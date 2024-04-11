@@ -37,8 +37,11 @@ use ::
 	},
 	rustls::
 	{
-		Certificate,
-		PrivateKey,
+		crypto::ring,
+		pki_types::
+		{
+			PrivateKeyDer,
+		},
 		ServerConfig,
 	},
 	rustls_pemfile::
@@ -107,7 +110,7 @@ impl Responder
 					.service(resolve)
 			})
 			.max_connections(self.max_connections)
-			.bind_rustls_021(self.https_bind, self.tls_config)?
+			.bind_rustls_0_22(self.https_bind, self.tls_config)?
 			.run()
 			.await?;
 
@@ -167,8 +170,9 @@ impl ResponderBuilder
 		let tls_key = self.tls_key.map(Result::Ok).unwrap_or_else(|| bail!("no tls_key provided")).context(Error::InvalidConfiguration)?;
 		let tls_chain = self.tls_chain.map(Result::Ok).unwrap_or_else(|| bail!("no tls_chain provided")).context(Error::InvalidConfiguration)?;
 
-		let tls_config = ServerConfig::builder()
-			.with_safe_defaults()
+		let tls_config = ServerConfig::builder_with_provider(ring::default_provider().into())
+			.with_safe_default_protocol_versions()
+			.context("crypto provider does not support safe protocols")?
 			.with_no_client_auth();
 
 		let tls_chain = &mut BufReader::new(File::open(tls_chain).unwrap());
@@ -176,7 +180,7 @@ impl ResponderBuilder
 
 		// convert files to key/cert objects
 		let tls_chain = certs(tls_chain)
-			.map(|res| Ok(Certificate(res?.to_vec())))
+			.map(|res| Ok(res?))
 			.collect::<Result<_>>()
 			.context("cannot load certificate chain")?;
 
@@ -187,9 +191,9 @@ impl ResponderBuilder
 			.into_iter()
 			.filter_map(|item| match item
 			{
-				Item::Pkcs1Key(key) => Some(PrivateKey(key.secret_pkcs1_der().into())),
-				Item::Pkcs8Key(key) => Some(PrivateKey(key.secret_pkcs8_der().into())),
-				Item::Sec1Key(key) => Some(PrivateKey(key.secret_sec1_der().into())),
+				Item::Pkcs1Key(key) => Some(PrivateKeyDer::Pkcs1(key)),
+				Item::Pkcs8Key(key) => Some(PrivateKeyDer::Pkcs8(key)),
+				Item::Sec1Key(key) => Some(PrivateKeyDer::Sec1(key)),
 				_ => None,
 			})
 			.next()
