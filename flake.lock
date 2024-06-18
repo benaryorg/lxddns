@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1709126324,
-        "narHash": "sha256-q6EQdSeUZOG26WelxqkmR7kArjgWCdw5sfJVHPH/7j8=",
+        "lastModified": 1710146030,
+        "narHash": "sha256-SZ5L6eA7HJ/nmkzGG7/ISclqe6oZdOZTNoesiInkXPQ=",
         "ref": "refs/heads/main",
-        "rev": "d465f4819400de7c8d874d50b982301f28a84605",
-        "revCount": 91,
+        "rev": "b1d9ab70662946ef0850d488da1c9019f3a9752a",
+        "revCount": 92,
         "type": "git",
         "url": "https://git.shell.bsocat.net/flake-utils"
       },
@@ -22,16 +22,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1709309926,
-        "narHash": "sha256-VZFBtXGVD9LWTecGi6eXrE0hJ/mVB3zGUlHImUs2Qak=",
-        "ref": "nixos-23.11",
-        "rev": "79baff8812a0d68e24a836df0a364c678089e2c7",
-        "revCount": 556338,
+        "lastModified": 1718437845,
+        "narHash": "sha256-ZT7Oc1g4I4pHVGGjQFnewFVDRLH5cIZhEzODLz9YXeY=",
+        "ref": "nixos-24.05",
+        "rev": "752c634c09ceb50c45e751f8791cb45cb3d46c9e",
+        "revCount": 631673,
         "type": "git",
         "url": "https://git.shell.bsocat.net/nixpkgs"
       },
       "original": {
-        "ref": "nixos-23.11",
+        "ref": "nixos-24.05",
         "type": "git",
         "url": "https://git.shell.bsocat.net/nixpkgs"
       }

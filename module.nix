@@ -25,7 +25,7 @@
           {
             default = "http";
             type = lib.types.enum [ "http" "amqp" "none" ];
-            description = lib.mdDoc
+            description =
             ''
               Which protocol variant to use.
               This option determines defaults for the binary used and the CLI parameters deployed.
@@ -36,7 +36,7 @@
           {
             default = "lxddns";
             type = lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               User to run the service as.
 
@@ -49,7 +49,7 @@
           {
             default = "lxddns";
             type = lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               Group to run the service as.
 
@@ -62,7 +62,7 @@
           {
             default = true;
             type = lib.types.bool;
-            description = lib.mdDoc
+            description =
             ''
               Enable default sudo access to query the LXD service.
 
@@ -75,7 +75,7 @@
           {
             default = cfg.sudo;
             type = lib.types.bool;
-            description = lib.mdDoc
+            description =
             ''
               Additional sudo configuration to not log the LXD queries to syslog.
               May improve performance through disk IO reduction.
@@ -86,7 +86,7 @@
             default = "${pkgs.lxd}/bin/lxc";
             defaultText = lib.literalExpression "\${pkgs.lxd}/bin/lxc";
             type = lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               Command used passed to `--command` option of *lxddns*.
               This ensures compatibility with differing software such as Incus and LXD.
@@ -96,7 +96,7 @@
           {
             default = defaultBinary.${cfg.protocol};
             type = lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               Name of the binary to use from the package.
               If diverging protocols (or custom packages) this may need adjustments.
@@ -107,7 +107,7 @@
           {
             default = defaultArgs.${cfg.protocol};
             type = lib.types.listOf lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               Arguments used in systemd service.
               This is mainly useful if you chose `none` as the `protocol`.
@@ -119,7 +119,7 @@
             default = [ "--command" cfg.virt-command ];
             defaultText = lib.literalExpression ''[ "--command" cfg.virt-command ]'';
             type = lib.types.listOf lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               Dependent arguments passed to the systemd service conditionally.
             '';
@@ -128,7 +128,7 @@
           {
             default = [];
             type = lib.types.listOf lib.types.str;
-            description = lib.mdDoc
+            description =
             ''
               Additional arguments passed to the systemd service.
               Can be used for loglevel adjustments or similar.
@@ -140,7 +140,7 @@
             {
               default = "[::]";
               type = lib.types.str;
-              description = lib.mdDoc
+              description =
               ''
                 Address to bind lxddns to.
               '';
@@ -149,7 +149,7 @@
             {
               default = 9132;
               type = lib.types.int;
-              description = lib.mdDoc
+              description =
               ''
                 Port to bind lxddns to.
               '';
@@ -157,9 +157,9 @@
             tls-cert = lib.mkOption
             {
               default = "/var/lib/acme/${config.networking.fqdnOrHostName}/fullchain.pem";
-              defaultText = lib.mdDoc "`/var/lib/acme/\${config.networking.fqdnOrHostName}/fullchain.pem`";
+              defaultText = "`/var/lib/acme/\${config.networking.fqdnOrHostName}/fullchain.pem`";
               type = lib.types.str;
-              description = lib.mdDoc
+              description =
               ''
                 TLS certificate to use for TLS.
                 
@@ -171,9 +171,9 @@
             tls-key = lib.mkOption
             {
               default = "/var/lib/acme/${config.networking.fqdnOrHostName}/key.pem";
-              defaultText = lib.mdDoc "`/var/lib/acme/\${config.networking.fqdnOrHostName}/key.pem`";
+              defaultText = "`/var/lib/acme/\${config.networking.fqdnOrHostName}/key.pem`";
               type = lib.types.str;
-              description = lib.mdDoc
+              description =
               ''
                 TLS key to use for TLS.
                 
