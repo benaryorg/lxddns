@@ -110,7 +110,7 @@ impl Responder
 					.service(resolve)
 			})
 			.max_connections(self.max_connections)
-			.bind_rustls_0_22(self.https_bind, self.tls_config)?
+			.bind_rustls_0_23(self.https_bind, self.tls_config)?
 			.run()
 			.await?;
 
