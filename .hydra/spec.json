@@ -12,7 +12,7 @@
   "type": 0,
   "inputs": {
     "repo": {
-      "value": "https://git.shell.bsocat.net/lxddns.git main",
+      "value": "https://git.shell.bsocat.net/lxddns main",
       "type": "git",
       "emailresponsible": false
     },
