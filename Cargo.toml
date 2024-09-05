@@ -2,7 +2,7 @@
 name = "lxddns"
 description = "Couple LXD, PowerDNS, and lxddns for public IPv6 DNS resolution for your containers."
 homepage = "https://github.com/benaryorg/lxddns"
-version = "4.3.0"
+version = "5.0.0"
 authors = ["benaryorg <binary@benary.org>"]
 edition = "2018"
 license = "AGPL-3.0-or-later"
