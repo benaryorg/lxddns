@@ -28,9 +28,13 @@
           };
           checks =
           {
-            lxddns = pkgs.lxddns;
-            lxddns-http = pkgs.lxddns-http;
-            lxddns-amqp = pkgs.lxddns-amqp;
+            nixos-incus = pkgs.nixosTest (import ./test.nix
+            {
+              inherit pkgs;
+              lib = nixpkgs.lib;
+              module = self.outputs.nixosModules.lxddns;
+              overlay = self.outputs.overlays.lxddns;
+            });
           };
         }
     )
