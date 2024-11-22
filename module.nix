@@ -17,7 +17,7 @@
         services.lxddns-responder =
         {
           enable = lib.mkEnableOption "lxddns-responder";
-          package = lib.mkPackageOptionMD pkgs "lxddns"
+          package = lib.mkPackageOption pkgs "lxddns"
           {
             default = [ defaultPackage.${cfg.protocol} ];
           };

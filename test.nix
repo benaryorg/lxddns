@@ -86,10 +86,10 @@
           {
             enable = true;
             name = "br0";
-            addresses = [ { addressConfig = { Address = "2001:db8::1/64"; DuplicateAddressDetection = "none"; }; } ];
+            addresses = [ { Address = "2001:db8::1/64"; DuplicateAddressDetection = "none"; } ];
             networkConfig =
             {
-              IPForward = true;
+              IPv6Forwarding = true;
               IPv6SendRA = true;
               IPv6AcceptRA = false;
               ConfigureWithoutCarrier = true;
@@ -102,10 +102,7 @@
             ipv6Prefixes =
             [
               {
-                ipv6PrefixConfig =
-                {
-                    Prefix = "2001:db8::/64";
-                };
+                Prefix = "2001:db8::/64";
               }
             ];
             linkConfig =
