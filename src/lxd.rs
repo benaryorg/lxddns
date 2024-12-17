@@ -14,7 +14,7 @@ use ::
 	{
 		Deserialize,
 	},
-	regex_static::static_regex,
+	lazy_regex::regex_is_match,
 	tokio::
 	{
 		process::
@@ -169,7 +169,7 @@ impl FromStr for ContainerName
 
 	fn from_str(name: &str) -> std::result::Result<Self,Self::Err>
 	{
-		if !static_regex!(r"\A[-a-z0-9]+\z").is_match(name)
+		if !regex_is_match!(r"\A[-a-z0-9]+\z", name)
 		{
 			Err(Error::UnsafeName(name.to_string()))
 		}
