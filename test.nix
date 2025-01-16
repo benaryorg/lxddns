@@ -12,7 +12,7 @@
         lxddns-responder =
         {
           enable = true;
-          virt-command = "${pkgs.incus}/bin/incus";
+          virt-command = "${config.virtualisation.incus.package}/bin/incus";
           http =
           {
             tls-cert = builtins.toString (pkgs.writers.writeText "snakeoil-cert.pem"
