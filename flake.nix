@@ -31,7 +31,6 @@
             nixos-incus = pkgs.nixosTest (import ./test.nix
             {
               inherit pkgs;
-              lib = nixpkgs.lib;
               module = self.outputs.nixosModules.lxddns;
               overlay = self.outputs.overlays.lxddns;
             });
@@ -47,24 +46,7 @@
       };
       overlays = rec
       {
-        lxddns = _final: prev:
-          let
-          lxddns = prev.callPackage ./package.nix {};
-          genOverride = { features ? [], mainProgram ? "lxddns" }: { meta ? {}, ... }:
-          {
-            cargoBuildNoDefaultFeatures = features != [];
-            cargoBuildFeatures = features;
-            cargoCheckNoDefaultFeatures = features != [];
-            cargoCheckFeatures = features;
-            meta = meta // { inherit mainProgram; };
-          };
-          genOverrideShort = type: genOverride { features = [ type ]; mainProgram = "lxddns-${type}"; };
-        in
-          {
-            lxddns = lxddns;
-            lxddns-http = lxddns.overrideAttrs (genOverrideShort "http");
-            lxddns-amqp = lxddns.overrideAttrs (genOverrideShort "amqp");
-          };
+        lxddns = import ./overlay.nix;
         default = lxddns;
       };
       hydraJobs =

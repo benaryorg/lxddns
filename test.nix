@@ -1,4 +1,4 @@
-{ overlay, module, lib, pkgs }:
+{ overlay, module, pkgs }:
 {
   name = "lxddns-nixos-vm-test";
   nodes.host = { pkgs, config, ... }:
@@ -165,10 +165,7 @@
           nixpkgs.hostPlatform = pkgs.system;
         };
       };
-      guest = lib.nixosSystem
-      {
-        modules = [ guestConfig ];
-      };
+      guest = pkgs.nixos guestConfig;
       image = guest.config.system.build.tarball;
       metadata = guest.config.system.build.metadata;
     in
