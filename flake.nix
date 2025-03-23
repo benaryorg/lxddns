@@ -53,5 +53,6 @@
         lxddns = import ./overlay.nix;
         default = lxddns;
       };
+      hydraJobs = { inherit (self) packages checks; };
     };
 }
