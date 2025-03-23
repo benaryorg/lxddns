@@ -35,12 +35,9 @@
               module = self.outputs.nixosModules.lxddns;
               overlay = self.outputs.overlays.lxddns;
             }));
-            lint =
-            {
-              # only run linting once, on x86_64-linux (preferrably aarch64 but it's less common)
-              deadnix = pkgs.runCommand "lxddns-deadnix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.deadnix}/bin/deadnix --fail -- ${self} | tee /dev/stderr > $out";
-              statix = pkgs.runCommand "lxddns-statix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.statix}/bin/statix check --config ${self}/statix.toml -- ${self} | tee /dev/stderr > $out";
-            };
+            # only run linting once, on x86_64-linux (preferrably aarch64 but it's less common)
+            lint-deadnix = pkgs.runCommand "lxddns-deadnix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.deadnix}/bin/deadnix --fail -- ${self} | tee /dev/stderr > $out";
+            lint-statix = pkgs.runCommand "lxddns-statix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.statix}/bin/statix check --config ${self}/statix.toml -- ${self} | tee /dev/stderr > $out";
           };
         }
     )
