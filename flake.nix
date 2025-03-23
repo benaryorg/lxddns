@@ -36,8 +36,8 @@
               overlay = self.outputs.overlays.lxddns;
             }));
             # only run linting once, on x86_64-linux (preferrably aarch64 but it's less common)
-            lint-deadnix = pkgs.lib.optionalAttrs (system == "x86_64-linux") pkgs.runCommand "lxddns-deadnix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.deadnix}/bin/deadnix --fail -- ${self} | tee /dev/stderr > $out";
-            lint-statix = pkgs.lib.optionalAttrs (system == "x86_64-linux") pkgs.runCommand "lxddns-statix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.statix}/bin/statix check --config ${self}/statix.toml -- ${self} | tee /dev/stderr > $out";
+            lint-deadnix = pkgs.lib.optionalAttrs (system == "x86_64-linux") (pkgs.runCommand "lxddns-deadnix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.deadnix}/bin/deadnix --fail -- ${self} | tee /dev/stderr > $out");
+            lint-statix = pkgs.lib.optionalAttrs (system == "x86_64-linux") (pkgs.runCommand "lxddns-statix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.statix}/bin/statix check --config ${self}/statix.toml -- ${self} | tee /dev/stderr > $out");
           };
         }
     )
