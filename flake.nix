@@ -28,12 +28,16 @@
           };
           checks =
           {
-            nixos-incus = pkgs.nixosTest (import ./test.nix
+            # minor workaround for not having aarch64-linux machines with kvm support
+            nixos-incus = pkgs.lib.optionalAttrs (system == "x86_64-linux") (pkgs.nixosTest (import ./test.nix
             {
               inherit pkgs;
               module = self.outputs.nixosModules.lxddns;
               overlay = self.outputs.overlays.lxddns;
-            });
+            }));
+            # only run linting once, on x86_64-linux (preferrably aarch64 but it's less common)
+            lint-deadnix = pkgs.lib.optionalAttrs (system == "x86_64-linux") (pkgs.runCommand "lxddns-deadnix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.deadnix}/bin/deadnix --fail -- ${self} | tee /dev/stderr > $out");
+            lint-statix = pkgs.lib.optionalAttrs (system == "x86_64-linux") (pkgs.runCommand "lxddns-statix" { meta.hydraPlatforms = [ "x86_64-linux" ]; } "${pkgs.statix}/bin/statix check --config ${self}/statix.toml -- ${self} | tee /dev/stderr > $out");
           };
         }
     )
@@ -49,18 +53,6 @@
         lxddns = import ./overlay.nix;
         default = lxddns;
       };
-      hydraJobs =
-        let
-          pkgs = nixpkgs.legacyPackages.x86_64-linux;
-          srcdir = ./.;
-        in
-          {
-            inherit (self) packages;
-            lint =
-            {
-              deadnix = pkgs.runCommand "lxddns-deadnix" {} "${pkgs.deadnix}/bin/deadnix --fail -- ${srcdir} | tee /dev/stderr > $out";
-              statix = pkgs.runCommand "lxddns-statix" {} "${pkgs.statix}/bin/statix check --config ${srcdir}/statix.toml -- ${srcdir} | tee /dev/stderr > $out";
-            };
-          };
+      hydraJobs = { inherit (self) packages checks; };
     };
 }
