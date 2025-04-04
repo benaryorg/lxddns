@@ -1,49 +1,7 @@
 {
   "nodes": {
-    "flake-utils": {
-      "inputs": {
-        "systems": [
-          "systems"
-        ]
-      },
-      "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
-        "ref": "refs/heads/main",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
-        "revCount": 102,
-        "type": "git",
-        "url": "https://git.shell.bsocat.net/flake-utils"
-      },
-      "original": {
-        "type": "git",
-        "url": "https://git.shell.bsocat.net/flake-utils"
-      }
-    },
-    "nixpkgs": {
-      "locked": {
-        "lastModified": 1742512142,
-        "narHash": "sha256-8XfURTDxOm6+33swQJu/hx6xw1Tznl8vJJN5HwVqckg=",
-        "ref": "nixos-24.11",
-        "rev": "7105ae3957700a9646cc4b766f5815b23ed0c682",
-        "revCount": 715908,
-        "type": "git",
-        "url": "https://git.shell.bsocat.net/nixpkgs"
-      },
-      "original": {
-        "ref": "nixos-24.11",
-        "type": "git",
-        "url": "https://git.shell.bsocat.net/nixpkgs"
-      }
-    },
-    "root": {
-      "inputs": {
-        "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs",
-        "systems": "systems"
-      }
-    },
-    "systems": {
+    "nix-systems": {
+      "flake": false,
       "locked": {
         "lastModified": 1689347949,
         "narHash": "sha256-12tWmuL2zgBgZkdoB6qXZsgJEH9LR3oUgpaQq2RbI80=",
@@ -56,6 +14,29 @@
       "original": {
         "type": "git",
         "url": "https://git.shell.bsocat.net/nix-systems-default-linux"
+      }
+    },
+    "nixpkgs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1743576891,
+        "narHash": "sha256-vXiKURtntURybE6FMNFAVpRPr8+e8KoLPrYs9TGuAKc=",
+        "ref": "nixos-24.11",
+        "rev": "44a69ed688786e98a101f02b712c313f1ade37ab",
+        "revCount": 716632,
+        "type": "git",
+        "url": "https://git.shell.bsocat.net/nixpkgs"
+      },
+      "original": {
+        "ref": "nixos-24.11",
+        "type": "git",
+        "url": "https://git.shell.bsocat.net/nixpkgs"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nix-systems": "nix-systems",
+        "nixpkgs": "nixpkgs"
       }
     }
   },
