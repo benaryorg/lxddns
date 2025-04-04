@@ -1,4 +1,4 @@
-{ lib, linkFarm, nix, rustPlatform }:
+{ lib, nix-gitignore, nix, rustPlatform }:
   let
     toml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
   in
@@ -7,13 +7,7 @@
       pname = toml.package.name;
       version = toml.package.version;
 
-      src = linkFarm "lxddns-${version}-src"
-      [
-        { name = "src"; path = ./src; }
-        { name = "Cargo.toml"; path = ./Cargo.toml; }
-        { name = "Cargo.lock"; path = ./Cargo.lock; }
-        { name = "COPYING"; path = "COPYING"; }
-      ];
+      src = nix-gitignore.gitignoreSource [ "*.nix" ] ./.;
 
       cargoLock.lockFile = ./Cargo.lock;
 

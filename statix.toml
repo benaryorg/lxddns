@@ -3,4 +3,5 @@ disabled = [
 	"manual_inherit_from",
 	"manual_inherit",
 	"repeated_keys",
+	"redundant_pattern_bind",
 ]
