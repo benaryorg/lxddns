@@ -198,12 +198,9 @@
               description = "lxddns responder";
               # requires sudo and lxd
               path = [ "/run/wrappers" ];
-              unitConfig =
-              {
-                Type = "simple";
-              };
               serviceConfig =
               {
+                Type = "simple";
                 ExecStart = "${cfg.package}/bin/${cfg.binary} ${toString cfg.args} ${toString cfg.dependentArgs} ${toString cfg.extraArgs}";
                 User = cfg.user;
                 Group = cfg.group;
