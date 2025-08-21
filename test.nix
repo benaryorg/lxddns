@@ -175,7 +175,7 @@
 
         host.succeed("incus admin init --preseed < ${preseed}")
         host.succeed("incus ls >&2")
-        host.succeed("incus image import --alias nixos ${metadata}/tarball/nixos-system-${pkgs.system}.tar.xz ${image}/tarball/nixos-system-${pkgs.system}.tar.xz")
+        host.succeed("incus image import --alias nixos ${metadata}/tarball/${guest.config.image.fileName} ${image}/tarball/${guest.config.image.fileName}")
         host.succeed("incus launch -e nixos guest")
         host.succeed("incus ls >&2")
         host.wait_until_succeeds("incus ls --format csv --columns 6 | grep ^2001:db8:")
