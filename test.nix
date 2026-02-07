@@ -182,5 +182,6 @@
         host.succeed("incus ls >&2")
         host.succeed("curl -s https://incus.example.com:9132/resolve/v1/guest | jq --exit-status '.V1.AnyMatch[0]? // \"\" | test(\"\\\\A2001:db8:\")'")
         host.succeed("dig +short guest.incus.example.com @::1 AAAA | grep ^2001:db8:")
+        host.succeed("dig _acme-challenge.guest.incus.example.com @::1 NS +authority +noadd +nocmd +noquestion +nostats +norrcomments | grep -P ^_acme-challenge\\\\.guest\\\\.incus\\\\.example\\\\.com\\\\.\\\\s+\\\\d+\\\\s+IN\\\\s+NS\\\\s+guest\\\\.incus\\\\.example\\\\.com\\\\.\\$")
       '';
 }
