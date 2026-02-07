@@ -37,7 +37,8 @@ use ::
 	},
 	rustls::
 	{
-		crypto::ring,
+		// use aws_lc_rs at your leisure
+		crypto::ring as crypto,
 		pki_types::
 		{
 			PrivateKeyDer,
@@ -170,7 +171,7 @@ impl ResponderBuilder
 		let tls_key = self.tls_key.map(Result::Ok).unwrap_or_else(|| bail!("no tls_key provided")).context(Error::InvalidConfiguration)?;
 		let tls_chain = self.tls_chain.map(Result::Ok).unwrap_or_else(|| bail!("no tls_chain provided")).context(Error::InvalidConfiguration)?;
 
-		let tls_config = ServerConfig::builder_with_provider(ring::default_provider().into())
+		let tls_config = ServerConfig::builder_with_provider(crypto::default_provider().into())
 			.with_safe_default_protocol_versions()
 			.context("crypto provider does not support safe protocols")?
 			.with_no_client_auth();
