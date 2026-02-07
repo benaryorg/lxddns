@@ -50,7 +50,7 @@
           extraConfig =
           ''
             api=no
-            remote-connection-string=pipe:command=${pkgs.lxddns-http}/bin/lxddns-http pipe -v info --domain incus.example.com. --hostmaster hostmaster.example.com --remote https://incus.example.com:${builtins.toString config.services.lxddns-responder.http.listenPort} --soa-ttl 64 --aaaa-ttl 256,timeout=5000
+            remote-connection-string=pipe:command=${pkgs.writeShellScript "lxddns-http-pipe" "${pkgs.lxddns-http}/bin/lxddns-http pipe --loglevel info,lxddns=trace --domain incus.example.com. --hostmaster hostmaster.example.com --remote https://incus.example.com:${builtins.toString config.services.lxddns-responder.http.listenPort} --soa-ttl 64 --aaaa-ttl 256"},timeout=5000
             launch=remote
             negquery-cache-ttl=1
             local-address=::
