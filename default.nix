@@ -25,7 +25,7 @@ let
           checks = lib.genAttrs (import args.nix-systems) (system: let inherit (pkgsFor system) lib pkgs; in
           {
             # minor workaround for not having aarch64-linux machines with kvm support
-            nixos-incus = lib.optionalAttrs (system == "x86_64-linux") (pkgs.nixosTest (import ./test.nix
+            nixos-incus = lib.optionalAttrs (system == "x86_64-linux") (pkgs.testers.nixosTest (import ./test.nix
             {
               inherit pkgs module overlay;
             }));
