@@ -128,7 +128,7 @@ enum Command
 }
 
 #[tokio::main]
-async fn main()
+async fn main() -> std::result::Result<(), u8>
 {
 	let args = Args::parse();
 
@@ -144,7 +144,7 @@ async fn main()
 
 	info!("[main] logging initialised");
 
-	match args.command
+	let res = match args.command
 	{
 		Command::Pipe { ttl_config, remote, hostmaster, domain, } =>
 		{
@@ -156,19 +156,7 @@ async fn main()
 			;
 
 			info!("[main] running http-pipe");
-			match pipe.run().await
-			{
-				Ok(_) => {},
-				Err(err) =>
-				{
-					error!("[main][http-pipe] fatal error occured: {}", err);
-					for err in err.chain().skip(1)
-					{
-						error!("[main][http-pipe]  caused by: {}", err);
-					}
-					error!("[main][http-pipe] restarting all services");
-				},
-			}
+			pipe.run().await
 		},
 		Command::Responder { command, https_bind, tls_chain, tls_key, max_connections, } =>
 		{
@@ -181,19 +169,7 @@ async fn main()
 			;
 
 			info!("[main] running http-responder");
-			match responder.run().await
-			{
-				Ok(_) => unreachable!(),
-				Err(err) =>
-				{
-					error!("[main][http-responder] fatal error occured: {}", err);
-					for err in err.chain().skip(1)
-					{
-						error!("[main][http-responder]  caused by: {}", err);
-					}
-					error!("[main][http-responder] restarting all services");
-				},
-			}
+			responder.run().await
 		},
 		Command::Unix { ttl_config, remote, domain, hostmaster, socket, unix_workers, } =>
 		{
@@ -207,19 +183,21 @@ async fn main()
 			;
 
 			info!("[main] running unix");
-			match unix.run().await
+			unix.run().await
+		},
+	};
+
+	match res
+	{
+		Ok(_) => Ok(()),
+		Err(err) =>
+		{
+			error!("[main] fatal error occured: {}", err);
+			for err in err.chain().skip(1)
 			{
-				Ok(_) => {},
-				Err(err) =>
-				{
-					error!("[main][http-unix] fatal error occured: {}", err);
-					for err in err.chain().skip(1)
-					{
-						error!("[main][http-unix]  caused by: {}", err);
-					}
-					error!("[main][http-unix] restarting all services");
-				},
+				error!("[main]  caused by: {}", err);
 			}
+			Err(1)
 		},
 	}
 }

@@ -120,7 +120,7 @@ enum Command
 }
 
 #[tokio::main]
-async fn main()
+async fn main() -> std::result::Result<(), u8>
 {
 	let args = Args::parse();
 
@@ -136,7 +136,7 @@ async fn main()
 
 	info!("[main] logging initialised");
 
-	match args.command
+	let res = match args.command
 	{
 		Command::Pipe { url, ttl_config, domain, hostmaster, } =>
 		{
@@ -148,19 +148,7 @@ async fn main()
 			;
 
 			info!("[main] running pipe");
-			match pipe.run().await
-			{
-				Ok(_) => {},
-				Err(err) =>
-				{
-					error!("[main][pipe] fatal error occured: {}", err);
-					for err in err.chain().skip(1)
-					{
-						error!("[main][pipe]  caused by: {}", err);
-					}
-					error!("[main][pipe] restarting all services");
-				},
-			}
+			pipe.run().await
 		},
 		Command::Unix { url, ttl_config, domain, hostmaster, socket, unix_workers, } =>
 		{
@@ -174,19 +162,7 @@ async fn main()
 			;
 
 			info!("[main] running unix");
-			match unix.run().await
-			{
-				Ok(_) => {},
-				Err(err) =>
-				{
-					error!("[main][unix] fatal error occured: {}", err);
-					for err in err.chain().skip(1)
-					{
-						error!("[main][unix]  caused by: {}", err);
-					}
-					error!("[main][unix] restarting all services");
-				},
-			}
+			unix.run().await
 		},
 		Command::Responder { command, url, queue_name, responder_workers, } =>
 		{
@@ -198,19 +174,21 @@ async fn main()
 			;
 
 			info!("[main] running responder");
-			match responder.run().await
+			responder.run().await
+		},
+	};
+
+	match res
+	{
+		Ok(_) => Ok(()),
+		Err(err) =>
+		{
+			error!("[main] fatal error occured: {}", err);
+			for err in err.chain().skip(1)
 			{
-				Ok(_) => unreachable!(),
-				Err(err) =>
-				{
-					error!("[main][responder] fatal error occured: {}", err);
-					for err in err.chain().skip(1)
-					{
-						error!("[main][responder]  caused by: {}", err);
-					}
-					error!("[main][responder] restarting all services");
-				},
+				error!("[main]  caused by: {}", err);
 			}
+			Err(1)
 		},
 	}
 }
