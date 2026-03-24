@@ -68,11 +68,11 @@ impl Responder
 	{
 		let channel = self.connection.create_channel().await.context(Error::QueueConnectionError)?;
 
-		channel.exchange_declare("lxddns", ExchangeKind::Fanout, Default::default(), Default::default()).await?;
+		channel.exchange_declare("lxddns".into(), ExchangeKind::Fanout, Default::default(), Default::default()).await?;
 		trace!("[responder] created fanout exchange");
 
 		let queue = channel.queue_declare(
-			&self.queue_name,
+			self.queue_name.clone().into(),
 			QueueDeclareOptions
 			{
 				exclusive: true,
@@ -83,12 +83,12 @@ impl Responder
 		).await?;
 		trace!("[responder] created queue");
 
-		channel.queue_bind(queue.name().as_str(), "lxddns", "lxddns", Default::default(), Default::default()).await?;
+		channel.queue_bind(queue.name().clone(), "lxddns".into(), "lxddns".into(), Default::default(), Default::default()).await?;
 		trace!("[responder] bound exchange to queue {}", queue.name());
 
 		// Start a consumer.
-		let consumer = channel.basic_consume(queue.name().as_str(),
-			"",
+		let consumer = channel.basic_consume(queue.name().clone(),
+			"".into(),
 			BasicConsumeOptions
 			{
 				no_ack: false,
@@ -128,9 +128,9 @@ impl Responder
 					},
 				};
 
-				let (reply_to, corr_id) = match (delivery.properties.reply_to(),delivery.properties.correlation_id())
+				let (reply_to, corr_id) = match (delivery.properties.reply_to(), delivery.properties.correlation_id())
 				{
-					(Some(reply_to),Some(corr_id)) => (reply_to,corr_id),
+					(Some(reply_to), Some(corr_id)) => (reply_to, corr_id),
 					_ =>
 					{
 						info!("[responder][{}] message without reply_to or correlation_id; rejecting", name.as_ref());
@@ -175,7 +175,7 @@ impl Responder
 				};
 				let response = addresses.into_iter().flat_map(|addr| u128::from(addr).to_le_bytes().to_vec()).collect::<Vec<u8>>();
 
-				channel.basic_publish("",reply_to.as_str(),Default::default(), &response,
+				channel.basic_publish("".into(), reply_to.clone(), Default::default(), &response,
 					AMQPProperties::default()
 						.with_correlation_id(corr_id.clone())
 				).await.context("basic_publish")?;
@@ -194,7 +194,7 @@ impl Responder
 	}
 }
 
-#[derive(Clone,Eq,PartialEq,Hash,Debug,Default)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Default)]
 pub struct ResponderBuilder
 {
 	command: Option<String>,

@@ -68,7 +68,7 @@ impl RemoteQuery
 	pub async fn new(channel: Channel) -> Result<Self>
 	{
 		let response_queue = channel.queue_declare(
-			"",
+			"".into(),
 			QueueDeclareOptions
 			{
 				exclusive: false,
@@ -100,8 +100,8 @@ impl RemoteQueryTrait for RemoteQuery
 	{
 		debug!("[amqp-remote_query][{}] starting query", name.as_ref());
 
-		let mut consumer = self.channel.basic_consume(self.response_queue.name().as_str(),
-			"",
+		let mut consumer = self.channel.basic_consume(self.response_queue.name().clone(),
+			"".into(),
 			BasicConsumeOptions
 			{
 				no_ack: false,
@@ -114,7 +114,7 @@ impl RemoteQueryTrait for RemoteQuery
 		let correlation_id = Uuid::new_v4();
 		trace!("[amqp-remote_query][{}] correlation id: {}", name.as_ref(), correlation_id);
 
-		self.channel.basic_publish("lxddns","lxddns",Default::default(),name.as_ref().as_bytes(),
+		self.channel.basic_publish("lxddns".into(), "lxddns".into(), Default::default(), name.as_ref().as_bytes(),
 			AMQPProperties::default()
 				.with_correlation_id(format!("{}", correlation_id).into())
 				.with_reply_to(self.response_queue.name().clone())
