@@ -21,10 +21,10 @@
         };
       };
 
-      meta = with lib;
+      meta =
       {
         description = toml.package.description;
         homepage = toml.package.homepage;
-        license = builtins.filter (l: builtins.hasAttr "spdxId" l && l.spdxId == toml.package.license) (builtins.attrValues licenses);
+        license = builtins.getAttr toml.package.license lib.licensesSpdx;
       };
     }
