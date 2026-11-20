@@ -11,15 +11,6 @@
 
       cargoLock.lockFile = ./Cargo.lock;
 
-      auditable = true; # TODO: remove when this is the default
-
-      passthru =
-      {
-        tests =
-        {
-          inherit nix;
-        };
-      };
 
       meta =
       {
