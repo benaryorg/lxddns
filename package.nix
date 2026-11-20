@@ -1,4 +1,13 @@
-{ lib, nix-gitignore, nix, rustPlatform }:
+{ lib
+, nix-gitignore
+
+, rustPlatform
+, pkg-config
+
+, zstd
+, aws-lc
+}:
+
   let
     toml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
   in
@@ -11,6 +20,13 @@
 
       cargoLock.lockFile = ./Cargo.lock;
 
+      buildInputs =
+      [
+        zstd
+        aws-lc
+      ];
+
+      nativeBuildInputs = [ pkg-config ];
 
       meta =
       {
