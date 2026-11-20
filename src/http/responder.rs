@@ -37,8 +37,8 @@ use ::
 	},
 	rustls::
 	{
-		// use aws_lc_rs at your leisure
-		crypto::ring as crypto,
+		// use ring at your leisure
+		crypto::aws_lc_rs as crypto,
 		pki_types::
 		{
 			PrivateKeyDer,
